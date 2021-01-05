@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.1] - 2021-01-5
+- Improve worker pool to avoid CPU-expensive polling
+- A single NGINX is now used to serve the static files and to proxy API access
+- Fix saved hash reload bug causing DB to always be re-generated
+- Fix scroll bar not visible on firefox
+
 ## [0.1.0] - 2021-01-4
 - Use workers to speed up queries computations
 - API cleanup and code refactoring
