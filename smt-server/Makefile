@@ -24,7 +24,7 @@ deploy-prod: update-frontend
 	bash -c "git log | head -n 1 | sed 's/commit //g' > extraVersionHash.txt"
 	ssh -t $(DEPLOY_SERVER) "mkdir -p smt-server && cd smt-server && docker-compose down || true"
 	ssh -t $(DEPLOY_SERVER) "rm -rf smt-server/frontend && rm -rf smt-server/node_modules && rm -f smt-server/* 2> /dev/null || true"
-	rsync -av -e ssh --exclude='data' --exclude='node_modules' . $(DEPLOY_SERVER):/home/ubuntu/smt-server/
+	rsync -avz -e ssh --exclude='data' --exclude='node_modules' . $(DEPLOY_SERVER):/home/ubuntu/smt-server/
 	ssh -t $(DEPLOY_SERVER) "cd smt-server && docker-compose build && docker-compose up -d --remove-orphans"
 
 update-frontend:
