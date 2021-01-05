@@ -86,7 +86,8 @@ const syncGitData = async function (gitServer, gitBranch) {
 const getSmtServerSourceCodeHash = async function () {
   let extraVersionHash = ''
   try {
-    extraVersionHash = await fsp.readFile(__dirname + '/extraVersionHash.txt')
+    extraVersionHash = await fsp.readFile(__dirname + '/extraVersionHash.txt', 'utf-8')
+    extraVersionHash = extraVersionHash.trim()
   } catch (err) {
     console.log('No extraVersionHash.txt file found, try to generate one from git status')
     // Check if this server is in a git and if it has modifications, generate
@@ -133,8 +134,9 @@ const initServer = async function () {
   const dbAlreadyExists = fs.existsSync(dbFileName)
   if (dbAlreadyExists) {
     try {
-      const lastDBbHashKey = fs.readFileSync(dbFileName + '-HashKey.txt')
-      if (lastDBbHashKey === SMT_SERVER_INFO.baseHashKey) {
+      const lastDBbHashKey = fs.readFileSync(dbFileName + '-HashKey.txt', 'utf8').trim()
+      if (lastDBbHashKey === SMT_SERVER_INFO.baseHashKey ||
+          lastDBbHashKey === 'dontReloadGeojson') {
         reloadGeojson = false
       } else {
         // Code and/or data changed, supress previous DB
