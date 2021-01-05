@@ -9,15 +9,15 @@
 // This file is part of the Survey Monitoring Tool plugin, which received
 // funding from the Centre national d'études spatiales (CNES).
 
+import fs from 'fs'
+import workerpool from 'workerpool'
 import qe from './query-engine.mjs'
-import worker_threads from 'worker_threads'
 
-const { dbFileName, fieldsList } = worker_threads.workerData
+console.log('Init worker')
+qe.init()
 
-console.log('Init worker from: ' + dbFileName)
-
-qe.init(dbFileName, fieldsList)
-worker_threads.parentPort.on('message', ({ func, parameters }) => {
-  const result = qe[func](...parameters)
-  worker_threads.parentPort.postMessage(result)
+// Create a worker and register public functions
+workerpool.worker({
+  query: function (...params) { return qe.query(...params) },
+  getHipsTile: function (...params) { return qe.getHipsTile(...params) },
 })

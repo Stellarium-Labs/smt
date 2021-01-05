@@ -16,10 +16,11 @@ import turf from '@turf/turf'
 import assert from 'assert'
 import geo_utils from './geojson-utils.mjs'
 import fs from 'fs'
-import worker_threads from 'worker_threads'
+import workerpool from 'workerpool'
 import os from 'os'
 
 const HEALPIX_ORDER = 5
+const __dirname = process.cwd()
 
 export default {
 
@@ -51,8 +52,12 @@ export default {
     return 'JSON'
   },
 
-  init: function (dbFileName, _fieldsList) {
+  init: function () {
     let that = this
+
+    const dbFileName = __dirname + '/qe.db'
+    const smtConfig = JSON.parse(fs.readFileSync(__dirname + '/data/smtConfig.json'))
+    that.fieldsList = _.cloneDeep(smtConfig.fields)
 
     let dbAlreadyExists = fs.existsSync(dbFileName)
     if (dbAlreadyExists) console.log('Opening existing Data Base (read only): ' + dbFileName)
@@ -121,7 +126,6 @@ export default {
       }
     })
 
-    that.fieldsList = _.cloneDeep(_fieldsList)
     that.fieldsMap = {}
     for (let i in that.fieldsList) {
       that.fieldsMap[that.fieldsList[i].id] = that.fieldsList[i]
@@ -156,8 +160,8 @@ export default {
 
     that.db = db
 
-    if (worker_threads.isMainThread)
-      that.initAsync(dbFileName, _fieldsList)
+    if (workerpool.isMainThread)
+      that.initAsync(dbFileName, smtConfig.fields)
   },
 
   ingestGeoJson: function (jsonData) {
@@ -441,7 +445,7 @@ export default {
   },
 
   queryAsync: function (...parameters) {
-    return this.asyncJob('query', ...parameters)
+    return this.pool.exec('query', parameters)
   },
 
   getHipsProperties: function () {
@@ -506,72 +510,13 @@ export default {
   },
 
   getHipsTileAsync: function (...parameters) {
-    return this.asyncJob('getHipsTile', ...parameters)
+    return this.pool.exec('getHipsTile', parameters)
   },
 
-  // A queue containing all pending async jobs
-  queue: [],
-
-  // Add async jobs into queue
-  asyncJob: function (func, ...parameters) {
-    const that = this
-    return new Promise((resolve, reject) => {
-      that.queue.push({
-        resolve,
-        reject,
-        message: { func, parameters },
-      })
-    })
-  },
+  // A worker pool
+  pool: undefined,
 
   initAsync: function (dbFileName, fieldsList) {
-    const that = this
-
-    const spawn = function () {
-      const worker = new worker_threads.Worker('./worker.mjs', { workerData: { dbFileName, fieldsList } })
-
-      let job = null // Current item from the queue
-      let error = null // Error that caused the worker to crash
-      let timer = null // Timer used for polling
-
-      function poll() {
-        if (that.queue.length) {
-          // If there's a job in the queue, send it to the worker
-          job = that.queue.shift()
-          worker.postMessage(job.message)
-        } else {
-          // Otherwise, check again later
-          timer = setImmediate(poll)
-        }
-      }
-
-      worker
-        .on('online', poll)
-        .on('message', (result) => {
-          job.resolve(result)
-          job = null
-          poll() // Check if there's more work to do
-        })
-        .on('error', (err) => {
-          console.error(err)
-          error = err
-        })
-        .on('exit', (code) => {
-          clearImmediate(timer)
-          if (job) {
-            job.reject(error || new Error('worker died'))
-          }
-          if (code !== 0) {
-            console.error(`worker exited with code ${code}`)
-            spawn() // Worker died, so spawn a new one
-          }
-        })
-    }
-
-    // Spawn workers that try to drain the queue
-    const nbWorkers = Math.max(1, os.cpus().length - 1)
-    for (let i = 0; i < nbWorkers; ++i) {
-      spawn()
-    }
+    this.pool = workerpool.pool('./worker.mjs')
   }
 }

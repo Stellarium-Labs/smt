@@ -146,7 +146,7 @@ const initServer = async function () {
       fs.unlinkSync(dbFileName)
     }
   }
-  qe.init(dbFileName, smtConfig.fields)
+  qe.init()
 
   // And start listening to connection while the DB is being filled
   app.listen(port, () => {
