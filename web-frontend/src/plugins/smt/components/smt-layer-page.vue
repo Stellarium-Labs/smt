@@ -30,7 +30,7 @@
       </v-card-text>
     </v-card>
     <div class="scroll-container">
-      <v-container class="pl-0 pr-4" fluid style="height: 100%">
+      <v-container class="pl-0 pr-0" fluid style="height: 100%">
         <v-container>
           <smt-field class="mb-2" v-for="fr in resultsFieldsToDisplay" :key="fr.field.id" :fieldDescription="fr.field" :fieldResults="fr" v-on:add-constraint="addConstraint" v-on:remove-constraint="removeConstraint" v-on:constraint-live-changed="constraintLiveChanged">
           </smt-field>
@@ -378,10 +378,26 @@ export default {
 <style>
 .scroll-container {
   flex: 1 1 auto;
-  overflow-y: overlay;
+  overflow-y: scroll;
   backface-visibility: hidden;
 }
 ul {
   padding-left: 30px;
+}
+/* scroll bar style */
+::-webkit-scrollbar {
+  width: 10px;
+}
+/* Track */
+::-webkit-scrollbar-track {
+  background: #121212;
+}
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: #424242;
+}
+/* Handle on hover */
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 </style>
