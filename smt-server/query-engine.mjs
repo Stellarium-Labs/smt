@@ -57,8 +57,29 @@ export default {
 
     const dbFileName = __dirname + '/qe.db'
     const smtConfig = JSON.parse(fs.readFileSync(__dirname + '/data/smtConfig.json'))
-    that.fieldsList = _.cloneDeep(smtConfig.fields)
 
+    // Initialize modules's attributes based on the config file
+    that.fieldsList = _.cloneDeep(smtConfig.fields)
+    that.fieldsMap = {}
+    for (let i in that.fieldsList) {
+      that.fieldsMap[that.fieldsList[i].id] = that.fieldsList[i]
+      if (that.fieldsList[i].computed) {
+        let options = {
+          extraFunctions: { date2unix: function (dstr) { return new Date(dstr).getTime() } },
+          customProp: (path, unused, obj) => _.get(obj, path, undefined)
+        }
+        that.fieldsList[i].computed_compiled = filtrex.compileExpression(that.fieldsList[i].computed, options)
+      }
+    }
+    // Add dummy entries matching our generated fields
+    that.fieldsMap['id'] = { type: 'string' }
+    that.fieldsMap['healpix_index'] = { type: 'number' }
+    that.fieldsMap['geogroup_id'] = { type: 'string' }
+
+    that.sqlFields = that.fieldsList.map(f => that.fId2AlaSql(f.id))
+    let sqlFieldsAndTypes = that.fieldsList.map(f => that.fId2AlaSql(f.id) + ' ' + that.fType2AlaSql(f.type)).join(', ')
+
+    // Open or create the SQLite DB
     let dbAlreadyExists = fs.existsSync(dbFileName)
     if (dbAlreadyExists) console.log('Opening existing Data Base (read only): ' + dbFileName)
     else console.log('Create new Data Base: ' + dbFileName)
@@ -128,25 +149,6 @@ export default {
       }
     })
 
-    that.fieldsMap = {}
-    for (let i in that.fieldsList) {
-      that.fieldsMap[that.fieldsList[i].id] = that.fieldsList[i]
-      if (that.fieldsList[i].computed) {
-        let options = {
-          extraFunctions: { date2unix: function (dstr) { return new Date(dstr).getTime() } },
-          customProp: (path, unused, obj) => _.get(obj, path, undefined)
-        }
-        that.fieldsList[i].computed_compiled = filtrex.compileExpression(that.fieldsList[i].computed, options)
-      }
-    }
-    // Add dummy entries matching our generated fields
-    that.fieldsMap['id'] = { type: 'string' }
-    that.fieldsMap['healpix_index'] = { type: 'number' }
-    that.fieldsMap['geogroup_id'] = { type: 'string' }
-
-    that.sqlFields = that.fieldsList.map(f => that.fId2AlaSql(f.id))
-    let sqlFieldsAndTypes = that.fieldsList.map(f => that.fId2AlaSql(f.id) + ' ' + that.fType2AlaSql(f.type)).join(', ')
-
     if (!dbAlreadyExists) {
       let info = db.prepare('CREATE TABLE features (id TEXT, geometry TEXT, healpix_index INT, geogroup_id TEXT, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
       db.prepare('CREATE INDEX idx_id ON features(id)').run()
@@ -162,8 +164,9 @@ export default {
 
     that.db = db
 
+    // Initialize the thread pool used to run async functions
     if (workerpool.isMainThread)
-      that.initAsync(dbFileName, smtConfig.fields)
+      that.initAsync()
   },
 
   ingestGeoJson: function (jsonData) {
@@ -446,10 +449,6 @@ export default {
     return { q: q, res: res }
   },
 
-  queryAsync: function (...parameters) {
-    return this.pool.exec('query', parameters)
-  },
-
   getHipsProperties: function () {
     return `hips_tile_format = geojson\nhips_order = 2\nhips_order_min = 1` +
         '\nhips_tile_width = 400\nobs_title = SMT Geojson'
@@ -516,14 +515,18 @@ export default {
     return geojson.features.length ? geojson : undefined
   },
 
-  getHipsTileAsync: function (...parameters) {
-    return this.pool.exec('getHipsTile', parameters)
-  },
-
   // A worker pool
   pool: undefined,
 
-  initAsync: function (dbFileName, fieldsList) {
+  initAsync: function () {
     this.pool = workerpool.pool('./worker.mjs')
+  },
+
+  queryAsync: function (...parameters) {
+    return this.pool.exec('query', parameters)
+  },
+
+  getHipsTileAsync: function (...parameters) {
+    return this.pool.exec('getHipsTile', parameters)
   }
 }
