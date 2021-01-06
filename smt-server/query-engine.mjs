@@ -89,15 +89,17 @@ export default {
     db.aggregate('GEO_UNION', {
       start: undefined,
       step: (accumulator, value) => {
+        console.assert(typeof value === 'string' && value.startsWith('__JSON'))
+        value = JSON.parse(value.substring(6))
         if (!accumulator) {
           const feature = {
             "type": "Feature",
-            "geometry": _.cloneDeep(value)
+            "geometry": value
           }
           const shiftCenter = turf.pointOnFeature(feature).geometry.coordinates
 
           // Compute shift matrices
-          const center = geojsonPointToVec3(shiftCenter)
+          const center = geo_utils.geojsonPointToVec3(shiftCenter)
           const mats = geo_utils.rotationMatsForShiftCenter(center)
           feature.m = mats.m
           feature.mInv = mats.mInv
@@ -107,7 +109,7 @@ export default {
         try {
           const f2 =  {
             "type": "Feature",
-            "geometry": _.cloneDeep(value)
+            "geometry": value
           }
           geo_utils.rotateGeojsonFeature(f2, accumulator.m)
           const union = turf.union(accumulator, f2)

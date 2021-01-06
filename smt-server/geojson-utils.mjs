@@ -73,6 +73,8 @@ export default {
     return turf.area(feature) / (1000 * 1000) * 4 * Math.PI / 509600000
   },
 
+  geojsonPointToVec3: geojsonPointToVec3,
+
   // Try to merge elements from a MultiPolygon into a single Polygon
   // This is useful if elements from a multipolygon overlap
   unionMergeMultiPolygon: function (feature) {
