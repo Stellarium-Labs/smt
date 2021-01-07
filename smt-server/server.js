@@ -66,7 +66,7 @@ const syncGitData = async function (gitServer, gitBranch) {
   console.log('Synchronizing with SMT data git repo: ' + gitServer)
   const repo = await NodeGit.Clone(gitServer, localPath, cloneOptions)
     .catch(err => {
-      console.log('Repo already exists, user local version from ' + localPath)
+      console.log('Repo already exists, use local version from ' + localPath)
       return NodeGit.Repository.open(localPath)
     })
   await repo.fetchAll(cloneOptions.fetchOpts)
