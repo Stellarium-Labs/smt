@@ -26,6 +26,7 @@ deploy-prod: update-frontend
 	ssh -t $(DEPLOY_SERVER) "rm -rf smt-server/frontend && rm -rf smt-server/node_modules && rm -f smt-server/* 2> /dev/null || true"
 	rsync -avz -e ssh --exclude='data' --exclude='node_modules' . $(DEPLOY_SERVER):/home/ubuntu/smt-server/
 	ssh -t $(DEPLOY_SERVER) "cd smt-server && docker-compose build && docker-compose up -d --remove-orphans"
+	rm extraVersionHash.txt
 
 update-frontend:
 	rm -rf frontend/dist
