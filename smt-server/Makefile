@@ -6,21 +6,30 @@
 # The terms of the AGPL v3 license can be found in the main directory of this
 # repository.
 
-.PHONY: setup dev
+.PHONY: setup dev run update-frontend update-frontend-prod deploy-prod
 
 USER_UID := $(shell id -u)
 USER_GID := $(shell id -g)
+
+DEPLOY_SERVER := ubuntu@smt.stellarium-web.org
+
+# Setup the build env for the backend server
 setup: Dockerfile
 	# Build docker image for node development
 	docker build -t smt-server --build-arg USER_UID=${USER_UID} --build-arg USER_GID=${USER_GID} .
 	docker run -it -v "$(PWD):/app" smt-server npm install
 
+# Run the backend server on localhost:8100
 dev:
+	docker run -it -v "$(PWD):/app" -p 8100:8100 smt-server npm start
+
+# Build and run a server locally serving backend and frontend on localhost:8100
+# This is the single command to run if you want to try/deploy the server locally.
+run: setup update-frontend
 	docker-compose build && docker-compose up --remove-orphans
 
-DEPLOY_SERVER := ubuntu@smt.stellarium-web.org
-
-deploy-prod: update-frontend
+# Deploys the full server (frontend + backend) on the production server
+deploy-prod: update-frontend-prod
 	bash -c "git log | head -n 1 | sed 's/commit //g' > extraVersionHash.txt"
 	ssh -t $(DEPLOY_SERVER) "mkdir -p smt-server && cd smt-server && docker-compose down || true"
 	ssh -t $(DEPLOY_SERVER) "rm -rf smt-server/frontend && rm -rf smt-server/node_modules && rm -f smt-server/* 2> /dev/null || true"
@@ -28,10 +37,17 @@ deploy-prod: update-frontend
 	ssh -t $(DEPLOY_SERVER) "cd smt-server && docker-compose build && docker-compose up -d --remove-orphans"
 	rm extraVersionHash.txt
 
+# Generate a static version of the website frontend (GUI) and stores it in the
+# frontend/dist directory. It is setup to use the backend on prod server.
+update-frontend-prod:
+	cp frontend/prodbuild.env.local ../web-frontend/.env.local
+	$(MAKE) update-frontend
+	rm ../web-frontend/.env.local
+
+# Generate a static version of the website frontend (GUI) and stores it in the
+# frontend/dist directory. It is setup to use the backend on localhost:8100
 update-frontend:
 	rm -rf frontend/dist
 	cd ../web-frontend && make setup
-	cp frontend/prodbuild.env.local ../web-frontend/.env.local
 	cd ../web-frontend && make build
-	rm ../web-frontend/.env.local
 	mv ../web-frontend/dist frontend/dist
