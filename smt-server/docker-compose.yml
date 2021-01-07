@@ -17,7 +17,7 @@ services:
     container_name: smt-server
     network_mode: bridge
 
-  smt-server-frontend:
+  smt-server-nginx-front:
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -35,5 +35,5 @@ services:
       VIRTUAL_PORT: 8100
       LETSENCRYPT_HOST: smt.stellarium-web.org
       LETSENCRYPT_EMAIL: contact@noctua-software.com
-    container_name: smt-server-frontend
+    container_name: smt-server-nginx-front
     network_mode: bridge
