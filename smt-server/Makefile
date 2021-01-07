@@ -6,7 +6,7 @@
 # The terms of the AGPL v3 license can be found in the main directory of this
 # repository.
 
-.PHONY: setup dev run update-frontend update-frontend-prod deploy-prod
+.PHONY: setup dev run update-frontend update-frontend-prod deploy-prod check_access_keys
 
 USER_UID := $(shell id -u)
 USER_GID := $(shell id -g)
@@ -20,13 +20,17 @@ setup: Dockerfile
 	docker run -it -v "$(PWD):/app" smt-server npm install
 
 # Run the backend server on localhost:8100
-dev:
+dev: check_access_keys
 	docker run -it -v "$(PWD):/app" -p 8100:8100 smt-server npm start
 
 # Build and run a server locally serving backend and frontend on localhost:8100
 # This is the single command to run if you want to try/deploy the server locally.
-run: setup update-frontend
+run: setup update-frontend check_access_keys
 	docker-compose build && docker-compose up --remove-orphans
+
+# Check that the git access keys are present
+check_access_keys:
+	@test -s $(PWD)/access_key && test -s $(PWD)/access_key.pub || echo "Data git server access key files are missing!" && exit
 
 # Deploys the full server (frontend + backend) on the production server
 deploy-prod: update-frontend-prod
