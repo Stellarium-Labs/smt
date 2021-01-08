@@ -181,7 +181,7 @@ export default {
       if (feature.geometry.type === 'MultiPolygon') {
         geo_utils.unionMergeMultiPolygon(feature)
       }
-      feature.geogroup_id = _.get(feature.properties, 'fieldID', undefined) || _.get(feature.properties, 'SurveyName', '') + _.get(feature, 'id', '')
+      feature.geogroup_id = _.get(feature.properties, 'fieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
       feature.id = that.fcounter++
       subFeatures = subFeatures.concat(geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER))
     })
@@ -485,7 +485,7 @@ export default {
     selectClause += ', COUNT(*) as c, healpix_index ' + (LOD_LEVEL === 0 ? '' : ', geogroup_id, geometry ') + 'FROM features '
     let sqlStatement = selectClause + whereClause
     if (tileId !== -1)
-      sqlStatement += ' GROUP BY ' + (LOD_LEVEL > 1 ? 'healpix_index, geogroup_id, SurveyName' : 'healpix_index, SurveyName')
+      sqlStatement += ' GROUP BY ' + (LOD_LEVEL > 1 ? 'healpix_index, geogroup_id, TelescopeName' : 'healpix_index, TelescopeName')
     else {
       sqlStatement += ' GROUP BY id'
     }
