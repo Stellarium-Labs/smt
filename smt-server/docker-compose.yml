@@ -1,4 +1,4 @@
-version: '2.1'
+version: '3'
 
 services:
   smt-server:
@@ -30,10 +30,11 @@ services:
       driver: journald
     depends_on:
      - smt-server
-    environment:
-      VIRTUAL_HOST: smt.stellarium-web.org
-      VIRTUAL_PORT: 8100
-      LETSENCRYPT_HOST: smt.stellarium-web.org
-      LETSENCRYPT_EMAIL: contact@noctua-software.com
     container_name: smt-server-nginx-front
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.smt-server-nginx-front.rule=Host(`smt.stellarium-web.org`)"
+      - "traefik.http.routers.smt-server-nginx-front.entrypoints=websecure"
+      - "traefik.http.routers.smt-server-nginx-front.tls.certresolver=myresolver"
+      - "traefik.http.services.smt-server-nginx-front.loadbalancer.server.port=8100"
     network_mode: bridge
