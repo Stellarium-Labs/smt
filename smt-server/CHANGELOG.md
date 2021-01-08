@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.2] - 2021-01-8
+- Add doc, and made quick start easier
+- Fix following data change
+- Change deploy to procedure (faster server)
+
 ## [0.1.1] - 2021-01-5
 - Improve worker pool to avoid CPU-expensive polling
 - A single NGINX is now used to serve the static files and to proxy API access
