@@ -181,7 +181,7 @@ export default {
       if (feature.geometry.type === 'MultiPolygon') {
         geo_utils.unionMergeMultiPolygon(feature)
       }
-      feature.geogroup_id = _.get(feature.properties, 'fieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
+      feature.geogroup_id = _.get(feature.properties, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
       feature.id = that.fcounter++
       subFeatures = subFeatures.concat(geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER))
     })
