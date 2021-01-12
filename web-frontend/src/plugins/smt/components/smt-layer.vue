@@ -13,7 +13,11 @@
   <div style="height: 100%; display: flex; flex-flow: column;">
     <v-card tile color="#424242">
       <v-card-text>
-        <div class="display-1 text--primary"><v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>{{ results.summary.count }} items</div>
+        <div class="display-1 text--primary">
+          <v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>
+          {{ results.summary.count }} items
+        </div>
+        <div>Color assigned to field: <b>{{ colorAssignedFieldId }}</b></div>
         <div v-if="constraintsToDisplay.length" class="mt-2">Constraints:</div>
         <v-row no-gutters>
           <div v-for="(constraint, i) in constraintsToDisplay" :key="i" style="text-align: center;" class="pa-1">
@@ -53,6 +57,7 @@ const mapColor = function (v) {
 export default {
   data: function () {
     return {
+      colorAssignedFieldId: undefined,
       query: {
         constraints: [],
         liveConstraint: undefined
@@ -94,8 +99,10 @@ export default {
     },
     refreshObservationsInSky: function () {
       const that = this
+      that.colorAssignedFieldId = that.colorAssignedFieldId || that.$smt.defaultColorAssignedFieldId
       const q2 = {
-        constraints: this.query.constraints
+        constraints: this.query.constraints,
+        groupingOptions: [{ operation: 'GROUP_BY', fieldId: that.colorAssignedFieldId }]
       }
       qe.queryVisual(q2).then(res => {
         that.geojsonObj = that.$observingLayer.add('geojson-survey', {
@@ -208,10 +215,7 @@ export default {
     refreshGeojsonLiveFilter: function () {
       const that = this
       if (!that.geojsonObj) return
-      let colorAssignedSqlField
-      if (that.$smt.colorAssignedField) {
-        colorAssignedSqlField = qe.fId2AlaSql(that.$smt.colorAssignedField)
-      }
+      const colorAssignedSqlField = qe.fId2AlaSql(that.colorAssignedFieldId)
       const selectedGeogroupIds = new Set(that.selectedFootprintData.map(e => e.geogroup_id))
 
       let liveConstraintSql
