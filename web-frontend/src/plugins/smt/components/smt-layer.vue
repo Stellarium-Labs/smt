@@ -11,7 +11,7 @@
 
 <template>
   <div style="height: 100%; display: flex; flex-flow: column;">
-    <v-card tile>
+    <v-card tile color="#424242">
       <v-card-text>
         <div class="display-1 text--primary"><v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>{{ results.summary.count }} items</div>
         <div v-if="constraintsToDisplay.length" class="mt-2">Constraints:</div>

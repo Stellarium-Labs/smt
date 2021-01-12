@@ -14,8 +14,8 @@
     <img :src="watermarkImage" style="position: fixed; left: 5px; bottom: 5px; opacity: 0.7;"></img>
     <smt-selection-info :selectedFeatures="selectedFootprintData" :query="query" @unselect="unselect()"></smt-selection-info>
     <smt-panel-root-toolbar></smt-panel-root-toolbar>
-    <v-chip-group v-model="tab" center-active mandatory large active-class="primary--text" style="margin-left: 5px; height: 48px;">
-      <v-chip v-for="name in layersList" :key="name" close close-icon="mdi-close" label @click:close="delLayer(name)">{{ name }}</v-chip>
+    <v-chip-group v-model="tab" center-active mandatory show-arrows active-class="chip-tab-active" style="margin-left: 5px; height: 38px;">
+      <v-chip v-for="name in layersList" :key="name" color="#262626" close close-icon="mdi-close" class="chip-tab-inactive" label @click:close="delLayer(name)">{{ name }}</v-chip>
       <v-btn icon class="transparent" @click.stop="addLayer()" style="margin-left: 0px; margin-top: 3px;"><v-icon>mdi-plus</v-icon></v-btn>
     </v-chip-group>
     <v-tabs-items v-model="tab" style="height: 100%;">
@@ -81,4 +81,14 @@ export default {
 </script>
 
 <style>
+.chip-tab-active {
+  background-color: #424242 !important;
+}
+.v-chip:before {
+  background-color: #424242 !important;
+}
+.chip-tab-inactive {
+  background-color: #262626;
+  border-radius: 2px !important;
+}
 </style>
