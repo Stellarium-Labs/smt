@@ -484,9 +484,12 @@ export default {
     selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => that.fId2AlaSql(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ') as ' + k).join(', ')
     selectClause += ', COUNT(*) as c, healpix_index ' + (LOD_LEVEL === 0 ? '' : ', geogroup_id, geometry ') + 'FROM features '
     let sqlStatement = selectClause + whereClause
-    if (tileId !== -1)
-      sqlStatement += ' GROUP BY ' + (LOD_LEVEL > 1 ? 'healpix_index, geogroup_id, TelescopeName' : 'healpix_index, TelescopeName')
-    else {
+    if (tileId !== -1) {
+      let extraGroupBy = ''
+      if (q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_BY')
+        extraGroupBy = ', ' + q.groupingOptions[0].fieldId
+      sqlStatement += ' GROUP BY ' + (LOD_LEVEL > 1 ? 'healpix_index, geogroup_id' : 'healpix_index') + extraGroupBy
+    } else {
       sqlStatement += ' GROUP BY id'
     }
     const stmt = that.db.prepare(sqlStatement)
