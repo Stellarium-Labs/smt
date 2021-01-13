@@ -33,7 +33,7 @@
         <v-row no-gutters>
           <div v-for="(constraint, i) in constraintsToDisplay" :key="i" style="text-align: center;" class="pa-1">
             <div class="caption white--text">{{ constraint.field.name }}</div>
-            <v-chip small class="white--text" :close="constraint.closable" :disabled="!constraint.closable" color="primary" @click="constraintClicked(i)" @click:close="constraintClosed(i)">
+            <v-chip small class="white--text" :close="constraint.closable" :disabled="!constraint.closable" :color="constraint.color ? constraint.color : 'primary'" @click="constraintClicked(i)" @click:close="constraintClosed(i)">
             <div :style="{ minWidth: constraint.closable ? 60 : 82 + 'px' }"><span v-if="printConstraint(constraint) === '__undefined'"><i>Undefined</i></span><span v-else>{{ printConstraint(constraint) }}</span></div>
             </v-chip>
           </div>
@@ -110,6 +110,11 @@ export default {
       if (c.field.widget === 'number_range') return '' + c.expression[0] + ' - ' + c.expression[1]
       return c.expression
     },
+    constraintColor: function (c) {
+      if (c.field.widget === 'date_range') return undefined
+      if (c.field.widget === 'number_range') return undefined
+      return this.cssColorForTag(c.expression)
+    },
     refreshObservationsInSky: function () {
       const that = this
       if (!that.colorAssignedField.id) {
@@ -151,7 +156,7 @@ export default {
             let tags = res.res[0].tags ? res.res[0].tags : {}
             tags = Object.keys(tags).map(function (key) {
               const closable = that.query.constraints.filter(c => c.fieldId === field.id && c.expression === key).length !== 0
-              return { name: key, count: tags[key], closable: closable }
+              return { name: key, count: tags[key], closable: closable, color: field.id === that.colorAssignedField.id ? that.cssColorForTag(key) : undefined }
             })
             Vue.set(that.results.fields, i, {
               field: field,
@@ -161,7 +166,8 @@ export default {
             })
             // Fill the implicit constraints list, i.e. the tags where only one value remains
             if (!constraintsIds.includes(field.id) && res.res[0].tags && Object.keys(res.res[0].tags).length === 1) {
-              that.results.implicitConstraints.push({ fieldId: field.id, field: field, expression: Object.keys(res.res[0].tags)[0], closable: false })
+              const key = Object.keys(res.res[0].tags)[0]
+              that.results.implicitConstraints.push({ fieldId: field.id, field: field, expression: key, closable: false, color: field.id === that.colorAssignedField.id ? that.cssColorForTag(key) : undefined })
             }
           }, err => {
             console.log(err)
@@ -221,10 +227,23 @@ export default {
       that.refreshAllFields()
       that.refreshObservationsInSky()
     },
+    cssColorForTag: function (val) {
+      console.log(val + ' ' + stringHash(val))
+      const c = mapColor(stringHash(val) / 4294967295)
+      c[3] = 0.3
+      return 'rgba(' + c[0] * 255 + ',  ' + c[1] * 255 + ',  ' + c[2] * 255 + ',  ' + c[3] + ')'
+    },
+    colorForFeatureProperties: function (featureProps) {
+      const colorAssignedSqlField = qe.fId2AlaSql(this.colorAssignedField.id)
+      let cstring = Object.keys(_.get(featureProps, colorAssignedSqlField))[0]
+      if (!cstring) cstring = ''
+      const c = mapColor(stringHash(cstring) / 4294967295)
+      c[3] = 0.3
+      return c
+    },
     refreshGeojsonLiveFilter: function () {
       const that = this
       if (!that.geojsonObj) return
-      const colorAssignedSqlField = qe.fId2AlaSql(that.colorAssignedField.id)
       const selectedGeogroupIds = new Set(that.selectedFootprintData.map(e => e.geogroup_id))
 
       let liveConstraintSql
@@ -251,13 +270,7 @@ export default {
           feature.colorDone = false
         }
         if (feature.colorDone) return { hidden: false }
-        let c = [1, 0.3, 0.3, 0.3]
-        if (colorAssignedSqlField) {
-          let cstring = Object.keys(_.get(feature.properties, colorAssignedSqlField))[0]
-          if (!cstring) cstring = ''
-          c = mapColor(stringHash(cstring) / 4294967295)
-          c[3] = 0.3
-        }
+        const c = that.colorForFeatureProperties(feature.properties)
         feature.colorDone = true
         return {
           fill: c,
@@ -331,6 +344,7 @@ export default {
       for (const i in res) {
         res[i].closable = true
         res[i].field = this.$smt.fields.find(f => f.id === res[i].fieldId)
+        res[i].color = (res[i].field.id === this.colorAssignedField.id) ? this.constraintColor(res[i]) : undefined
       }
       // Add implicit constraints (when only a unique tag value match the query)
       res = res.concat(this.results.implicitConstraints)

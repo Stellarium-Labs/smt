@@ -12,7 +12,7 @@
 <template>
 
   <v-col cols="12">
-    <v-chip small class="white--text ma-1" :close="tag.closable" :color="tag.closable ? 'primary' : 'secondary'" v-for="(tag, i) in fieldResultsData" :key="i" @click="chipClicked(tag.name)" @click:close="chipClosed(tag.name)">
+    <v-chip small class="white--text ma-1" :close="tag.closable" :style="tag.closable ? 'border: 2px solid #2196f3;' : ''" :color="tag.color ? tag.color : (tag.closable ? 'primary' : 'secondary')" v-for="(tag, i) in fieldResultsData" :key="i" @click="chipClicked(tag.name)" @click:close="chipClosed(tag.name)">
       <span v-if="tag.name === '__undefined'"><i>Undefined</i></span><span v-else>{{ tag.name }}</span>&nbsp;<span :class="tag.closable ? 'white--text' : 'primary--text'"> ({{ tag.count }})</span>
     </v-chip>
   </v-col>
