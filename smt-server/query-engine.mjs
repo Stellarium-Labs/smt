@@ -312,13 +312,18 @@ export default {
           // Special case, do custom queries and return
           console.assert(q.aggregationOptions.length === 1)
           let fid = that.fId2AlaSql(agOpt.fieldId)
-          let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
-          let req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
-          const res = that.db.prepare(req).get()
+          let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NULL' : whereClause + ' AND ' + fid + ' IS NULL'
+          let req = 'SELECT COUNT(*) AS c ' + fromClause + wc
+          let res = that.db.prepare(req).get()
+          const null_count = res.c
+          wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
+          req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
+          res = that.db.prepare(req).get()
           that.postProcessSQLiteResult(res)
           if (!res.dmin || !res.dmax) {
             // No results
             let data = {
+              noval: null_count,
               min: undefined,
               max: undefined,
               step: '%Y-%m-%d',
@@ -356,6 +361,7 @@ export default {
           let sqlQ = 'SELECT COUNT(*) AS c, STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\') AS d ' + fromClause + wc + ' GROUP BY STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')'
           const res2 = that.db.prepare(sqlQ).all()
           let data = {
+            noval: null_count,
             min: start,
             max: stop,
             step: step,
@@ -392,14 +398,18 @@ export default {
           // Special case, do custom queries and return
           console.assert(q.aggregationOptions.length === 1)
           let fid = that.fId2AlaSql(agOpt.fieldId)
-          let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
-          let req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
-          let stmt = that.db.prepare(req)
-          const res = stmt.get()
+          let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NULL' : whereClause + ' AND ' + fid + ' IS NULL'
+          let req = 'SELECT COUNT(*) AS c ' + fromClause + wc
+          let res = that.db.prepare(req).get()
+          const null_count = res.c
+          wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
+          req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
+          res = that.db.prepare(req).get()
           that.postProcessSQLiteResult(res)
           if (res.dmin === res.dmax) {
             // No results
             let data = {
+              noval: null_count,
               min: res.dmin,
               max: res.dmax,
               step: undefined,
@@ -414,6 +424,7 @@ export default {
           let sqlQ = 'SELECT COUNT(*) AS c, ROUND((' + fid + ' - ' + res.dmin + ') / ' + step + ') * ' + step + ' + ' + res.dmin + ' AS d ' + fromClause + wc + ' GROUP BY ROUND((' + fid + ' - ' + res.dmin + ') / ' + step + ')'
           const res2 = that.db.prepare(sqlQ).all()
           let data = {
+            noval: null_count,
             min: res.dmin,
             max: res.dmax,
             step: step,
