@@ -188,6 +188,11 @@ export default {
             Vue.set(that.results.fields[i], 'status', 'ok')
             Vue.set(that.results.fields[i], 'edited', edited)
             Vue.set(that.results.fields[i], 'data', res.res[0].dh)
+
+            // Fill the implicit constraints list, i.e. histograms where only one value remains
+            if (res.res[0].dh.min === undefined && res.res[0].dh.noval > 0) {
+              that.results.implicitConstraints.push({ fieldId: field.id, field: field, expression: undefined, closable: false, color: field.id === that.colorAssignedField.id ? that.cssColorForTag(undefined) : undefined })
+            }
           })
         }
         if (field.widget === 'number_range') {
@@ -201,6 +206,11 @@ export default {
             Vue.set(that.results.fields[i], 'status', 'ok')
             Vue.set(that.results.fields[i], 'edited', edited)
             Vue.set(that.results.fields[i], 'data', res.res[0].nh)
+
+            // Fill the implicit constraints list, i.e. histograms where only one value remains
+            if (res.res[0].nh.min === undefined && res.res[0].nh.noval > 0) {
+              that.results.implicitConstraints.push({ fieldId: field.id, field: field, expression: undefined, closable: false, color: field.id === that.colorAssignedField.id ? that.cssColorForTag(undefined) : undefined })
+            }
           })
         }
       }
