@@ -409,6 +409,8 @@ export default {
           res = that.db.prepare(req).get()
           that.postProcessSQLiteResult(res)
           if (res.dmin === res.dmax) {
+            if (res.dmin === null) res.dmin = undefined
+            if (res.dmax === null) res.dmax = undefined
             // No results
             let data = {
               noval: null_count,
