@@ -17,7 +17,18 @@
           <v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>
           {{ results.summary.count }} items
         </div>
-        <div>Color assigned to field: <b>{{ colorAssignedFieldId }}</b></div>
+        <div>Color assigned to field:
+          <v-menu close-on-click>
+            <template v-slot:activator="{ on, attrs }">
+              <v-btn color="primary" dark v-bind="attrs" v-on="on">{{colorAssignedField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
+            </template>
+            <v-list>
+              <v-list-item v-for="(item, index) in $smt.fields" :key="index" @click="colorAssignedField = item">
+                <v-list-item-title>{{ item.name }}</v-list-item-title>
+              </v-list-item>
+            </v-list>
+          </v-menu>
+        </div>
         <div v-if="constraintsToDisplay.length" class="mt-2">Constraints:</div>
         <v-row no-gutters>
           <div v-for="(constraint, i) in constraintsToDisplay" :key="i" style="text-align: center;" class="pa-1">
@@ -57,7 +68,7 @@ const mapColor = function (v) {
 export default {
   data: function () {
     return {
-      colorAssignedFieldId: undefined,
+      colorAssignedField: { id: '', name: '' },
       query: {
         constraints: [],
         liveConstraint: undefined
@@ -77,18 +88,20 @@ export default {
   created: function () {
     console.log('Created layer: ' + this.name)
     this.geojsonObj = undefined
-    this.livefilterData = []
   },
   beforeDestroy: function () {
     console.log('Destroying layer: ' + this.name)
-    // Suppress previous geojson results
-    if (this.geojsonObj) {
-      this.$observingLayer.remove(this.geojsonObj)
-      this.geojsonObj.destroy()
-      this.geojsonObj = undefined
-    }
+    this.clearGeoJson()
   },
   methods: {
+    clearGeoJson: function () {
+      if (this.geojsonObj) {
+        this.$observingLayer.remove(this.geojsonObj)
+        this.geojsonObj.destroy()
+        this.geojsonObj = undefined
+      }
+      this.liveConstraint = undefined
+    },
     formatDate: function (d) {
       return new Moment(d).format('YYYY-MM-DD')
     },
@@ -99,12 +112,15 @@ export default {
     },
     refreshObservationsInSky: function () {
       const that = this
-      that.colorAssignedFieldId = that.colorAssignedFieldId || that.$smt.defaultColorAssignedFieldId
+      if (!that.colorAssignedField.id) {
+        that.colorAssignedField = that.$smt.fields.find(f => f.id === that.$smt.defaultColorAssignedFieldId)
+      }
       const q2 = {
         constraints: this.query.constraints,
-        groupingOptions: [{ operation: 'GROUP_BY', fieldId: that.colorAssignedFieldId }]
+        groupingOptions: [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
       }
       qe.queryVisual(q2).then(res => {
+        that.clearGeoJson()
         that.geojsonObj = that.$observingLayer.add('geojson-survey', {
           path: process.env.VUE_APP_SMT_SERVER + '/api/v1/hips/' + res
           // Optional:
@@ -187,14 +203,7 @@ export default {
       }
 
       // Cleanup previous query and states
-      this.liveConstraint = undefined
-      that.livefilterData = []
-      // Suppress previous geojson results
-      if (that.geojsonObj) {
-        that.$observingLayer.remove(that.geojsonObj)
-        that.geojsonObj.destroy()
-        that.geojsonObj = undefined
-      }
+      this.clearGeoJson()
 
       // Reset all fields values
       that.results.fields = that.$smt.fields.map(function (e) { return { status: 'loading', data: {} } })
@@ -215,7 +224,7 @@ export default {
     refreshGeojsonLiveFilter: function () {
       const that = this
       if (!that.geojsonObj) return
-      const colorAssignedSqlField = qe.fId2AlaSql(that.colorAssignedFieldId)
+      const colorAssignedSqlField = qe.fId2AlaSql(that.colorAssignedField.id)
       const selectedGeogroupIds = new Set(that.selectedFootprintData.map(e => e.geogroup_id))
 
       let liveConstraintSql
@@ -303,9 +312,15 @@ export default {
     selectedFootprintData: function () {
       // refresh the geojson live filter to make the selected object blink
       this.refreshGeojsonLiveFilter()
+    },
+    colorAssignedField: function () {
+      this.refreshObservationGroups()
     }
   },
   computed: {
+    allColorFields: function () {
+      return this.$smt ? this.$smt.fields.map(f => f.id) : []
+    },
     // Return real and implicit constraints to display in GUI
     constraintsToDisplay: function () {
       if (this.$store.state.SMT.status !== 'ready') {

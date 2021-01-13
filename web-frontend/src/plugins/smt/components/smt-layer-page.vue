@@ -42,9 +42,6 @@ export default {
       selectedFootprintData: [] // Remove me
     }
   },
-  created: function () {
-    this.addLayer('Layer 1')
-  },
   methods: {
     addLayer: function (name) {
       if (!name) {
@@ -65,7 +62,9 @@ export default {
   },
   watch: {
     '$store.state.SMT.status': function () {
-      // this.refreshObservationGroups()
+      if (this.$store.state.SMT.status === 'ready') {
+        this.addLayer('Layer 1')
+      }
     }
   },
   computed: {
@@ -75,6 +74,7 @@ export default {
     }
   },
   mounted: function () {
+
   },
   components: { SmtPanelRootToolbar, SmtSelectionInfo, SmtLayer }
 }
