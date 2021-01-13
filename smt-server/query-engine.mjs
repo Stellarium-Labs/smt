@@ -308,6 +308,8 @@ export default {
           selectClause += 'COUNT(*) as ' + agOpt.out
         } else if (agOpt.operation === 'VALUES_AND_COUNT') {
           selectClause += 'VALUES_AND_COUNT(' + that.fId2AlaSql(agOpt.fieldId) + ') as ' + agOpt.out
+        } else if (agOpt.operation === 'MIN_MAX') {
+          selectClause += 'MIN_MAX(' + that.fId2AlaSql(agOpt.fieldId) + ') as ' + agOpt.out
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           // Special case, do custom queries and return
           console.assert(q.aggregationOptions.length === 1)
