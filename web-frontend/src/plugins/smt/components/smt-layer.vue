@@ -20,7 +20,7 @@
         <div>Color assigned to field:
           <v-menu close-on-click>
             <template v-slot:activator="{ on, attrs }">
-              <v-btn color="primary" dark v-bind="attrs" v-on="on">{{colorAssignedField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
+              <v-btn dark v-bind="attrs" v-on="on">{{colorAssignedField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
             </template>
             <v-list>
               <v-list-item v-for="(item, index) in $smt.fields" :key="index" @click="colorAssignedField = item">
