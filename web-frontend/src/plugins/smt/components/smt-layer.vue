@@ -92,7 +92,6 @@ export default {
   props: ['name'],
   created: function () {
     console.log('Created layer: ' + this.name)
-    this.geojsonObj = undefined
   },
   beforeDestroy: function () {
     console.log('Destroying layer: ' + this.name)
@@ -123,49 +122,36 @@ export default {
     },
     refreshObservationsInSky: function () {
       const that = this
-      if (!that.colorAssignedField.id) {
-        that.colorAssignedField = that.$smt.fields.find(f => f.id === that.$smt.defaultColorAssignedFieldId)
+      const q2 = {
+        constraints: that.query.constraints
       }
-
-      const doVisualQuery = function () {
-        const q2 = {
-          constraints: that.query.constraints
-        }
-        if (that.colorAssignedField.widget === 'tags') {
-          q2.groupingOptions = [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
-        }
-        return qe.queryVisual(q2).then(res => {
-          that.clearGeoJson()
-          that.geojsonObj = that.$observingLayer.add('geojson-survey', {
-            path: process.env.VUE_APP_SMT_SERVER + '/api/v1/hips/' + res
-            // Optional:
-            // max_fov: 30,
-            // min_fov: 10
-          })
-          that.refreshGeojsonLiveFilter()
-        })
-      }
-
       if (that.colorAssignedField.widget === 'tags') {
-        return doVisualQuery()
+        q2.groupingOptions = [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
       }
-
-      // For other widgets, computing the color requires to know the min/max
-      // range first.
-      const q1 = {
-        constraints: this.query.constraints,
-        groupingOptions: [{ operation: 'GROUP_ALL' }],
-        aggregationOptions: [{ operation: 'MIN_MAX', fieldId: that.colorAssignedField.id, out: 'minmax' }]
-      }
-      qe.query(q1).then(res => {
-        that.colorAssignedFieldRange = res.res[0].minmax
-        return doVisualQuery()
+      return qe.queryVisual(q2).then(res => {
+        that.clearGeoJson()
+        that.geojsonObj = that.$observingLayer.add('geojson-survey', {
+          path: process.env.VUE_APP_SMT_SERVER + '/api/v1/hips/' + res
+          // Optional:
+          // max_fov: 30,
+          // min_fov: 10
+        })
+        that.refreshGeojsonLiveFilter()
       })
     },
     refreshAllFields: function () {
       const that = this
 
-      // Compute the WHERE clause to be used in following queries
+      // Re-compute layer count
+      const q1 = {
+        constraints: that.query.constraints,
+        groupingOptions: [{ operation: 'GROUP_ALL' }],
+        aggregationOptions: [{ operation: 'COUNT', out: 'total' }]
+      }
+      qe.query(q1).then(res => {
+        that.results.summary.count = res.res[0].total
+      })
+
       const queryConstraintsEdited = this.query.constraints.filter(c => !this.isEdited(c))
       const constraintsIds = that.query.constraints.map(c => c.fieldId)
 
@@ -238,31 +224,42 @@ export default {
         }
       }
     },
-    refreshObservationGroups: function () {
+    refreshLayer: function () {
       const that = this
 
       if (this.$store.state.SMT.status !== 'ready') {
         return
       }
 
-      // Cleanup previous query and states
+      // Clear sky
       this.clearGeoJson()
-
       // Reset all fields values
       that.results.fields = that.$smt.fields.map(function (e) { return { status: 'loading', data: {} } })
       that.results.implicitConstraints = []
-
-      const q1 = {
-        constraints: this.query.constraints,
-        groupingOptions: [{ operation: 'GROUP_ALL' }],
-        aggregationOptions: [{ operation: 'COUNT', out: 'total' }]
-      }
       that.results.summary.count = undefined
-      qe.query(q1).then(res => {
-        that.results.summary.count = res.res[0].total
-      })
-      that.refreshAllFields()
+
+      if (!that.colorAssignedField.id) {
+        that.colorAssignedField = that.$smt.fields.find(f => f.id === that.$smt.defaultColorAssignedFieldId)
+      }
+      if (that.colorAssignedField.widget !== 'tags') {
+        // For later steps, computing the color requires to know the min/max range first.
+        const q = {
+          constraints: that.query.constraints,
+          groupingOptions: [{ operation: 'GROUP_ALL' }],
+          aggregationOptions: [{ operation: 'MIN_MAX', fieldId: that.colorAssignedField.id, out: 'minmax' }]
+        }
+        qe.query(q).then(res => {
+          that.colorAssignedFieldRange = res.res[0].minmax
+          // Recompute all fields & sky content
+          that.refreshObservationsInSky()
+          that.refreshAllFields()
+        })
+        return
+      }
+
+      // Recompute all fields & sky content
       that.refreshObservationsInSky()
+      that.refreshAllFields()
     },
     cssColorForTag: function (val) {
       const c = mapColor(stringHash(val) / 4294967295)
@@ -336,14 +333,14 @@ export default {
       })
       this.query.constraints.push(c)
       this.editedConstraint = c
-      this.refreshObservationGroups()
+      this.refreshLayer()
     },
     removeConstraint: function (c) {
       this.query.constraints = this.query.constraints.filter(cons => {
         if (cons.fieldId === c.fieldId && cons.expression === c.expression && cons.operation === c.operation) return false
         return true
       })
-      this.refreshObservationGroups()
+      this.refreshLayer()
     },
     constraintLiveChanged: function (c) {
       this.liveConstraint = c
@@ -351,11 +348,11 @@ export default {
     },
     constraintClicked: function (i) {
       this.editedConstraint = this.query.constraints[i]
-      this.refreshObservationGroups()
+      this.refreshLayer()
     },
     constraintClosed: function (i) {
       this.query.constraints.splice(i, 1)
-      this.refreshObservationGroups()
+      this.refreshLayer()
     },
     isEdited: function (c) {
       return this.editedConstraint && c.fieldId === this.editedConstraint.fieldId
@@ -366,14 +363,14 @@ export default {
   },
   watch: {
     '$store.state.SMT.status': function () {
-      this.refreshObservationGroups()
+      this.refreshLayer()
     },
     selectedFootprintData: function () {
       // refresh the geojson live filter to make the selected object blink
       this.refreshGeojsonLiveFilter()
     },
     colorAssignedField: function () {
-      this.refreshObservationGroups()
+      this.refreshLayer()
     }
   },
   computed: {
@@ -432,7 +429,7 @@ export default {
     }
   },
   mounted: function () {
-    this.refreshObservationGroups()
+    this.refreshLayer()
     const that = this
     // Manage geojson features selection
     that.$stel.on('click', e => {
