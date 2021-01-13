@@ -99,12 +99,13 @@ export default {
     })
 
     db.aggregate('MIN_MAX', {
-      start: undefined,
+      start: () => [null, null],
       step: (accumulator, value) => {
-        if (!accumulator) return [value, value]
+        if (value === null) return accumulator
+        if (accumulator[0] === null) return [value, value]
         return [Math.min(accumulator[0], value), Math.max(accumulator[1], value)]
       },
-      result: accumulator => accumulator ? '__JSON' + JSON.stringify(accumulator) : undefined
+      result: accumulator => accumulator && accumulator[0] !== null ? '__JSON' + JSON.stringify(accumulator) : undefined
     })
 
     db.aggregate('GEO_UNION', {
