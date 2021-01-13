@@ -369,7 +369,7 @@ export default {
           continue
         }
         // Don't display tags widget when only one value remains (already displayed as implicit constraints)
-        if (rf.field.widget === 'tags' && rf.data && rf.data.filter(tag => tag.closable === false).length <= 1) continue
+        if (rf.field.widget === 'tags' && rf.data && rf.data.filter(tag => tag.closable === false).length < 1) continue
         // Don't display date range if the range is <= 24h
         if (rf.field.widget === 'date_range' && rf.data) {
           if (rf.data.max === undefined || rf.data.min === undefined) continue
