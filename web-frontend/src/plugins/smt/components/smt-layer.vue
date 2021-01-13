@@ -110,6 +110,7 @@ export default {
       return new Moment(d).format('YYYY-MM-DD')
     },
     printConstraint: function (c) {
+      if (c.expression === undefined) return '__undefined'
       if (c.field.widget === 'date_range') return this.formatDate(c.expression[0]) + ' - ' + this.formatDate(c.expression[1])
       if (c.field.widget === 'number_range') return '' + c.expression[0] + ' - ' + c.expression[1]
       return c.expression
