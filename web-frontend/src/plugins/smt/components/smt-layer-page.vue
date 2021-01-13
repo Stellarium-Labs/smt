@@ -10,7 +10,7 @@
 // funding from the Centre national d'études spatiales (CNES).
 
 <template>
-  <div style="height: 100%; display: flex; flex-flow: column;">
+  <div style="height: 100%;">
     <img :src="watermarkImage" style="position: fixed; left: 5px; bottom: 5px; opacity: 0.7;"></img>
     <smt-selection-info :selectedFeatures="selectedFootprintData" :query="query" @unselect="unselect()"></smt-selection-info>
     <smt-panel-root-toolbar></smt-panel-root-toolbar>
@@ -18,11 +18,13 @@
       <v-chip v-for="name in layersList" :key="name" color="#262626" close close-icon="mdi-close" class="chip-tab-inactive" label @click:close="delLayer(name)">{{ name }}</v-chip>
       <v-btn icon class="transparent" @click.stop="addLayer()" style="margin-left: 0px; margin-top: 3px;"><v-icon>mdi-plus</v-icon></v-btn>
     </v-chip-group>
-    <v-tabs-items v-model="tab" style="height: 100%;">
-      <v-tab-item :eager="true" v-for="name in layersList" :key="name" style="height: 100%; display: flex; flex-flow: column;">
-        <smt-layer :name="name"></smt-layer>
-      </v-tab-item>
-    </v-tabs-items>
+    <div style="height: calc(100% - 38px - 48px);">
+      <v-tabs-items v-model="tab" style="height: 100%;">
+        <v-tab-item :eager="true" v-for="name in layersList" :key="name" style="height: 100%; display: flex; flex-flow: column;">
+          <smt-layer :name="name"></smt-layer>
+        </v-tab-item>
+      </v-tabs-items>
+    </div>
     </v-card>
   </div>
 </template>
