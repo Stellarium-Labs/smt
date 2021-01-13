@@ -73,6 +73,7 @@ export default {
   data: function () {
     return {
       colorAssignedField: { id: '', name: '' },
+      colorAssignedFieldRange: [0, 1],
       query: {
         constraints: [],
         liveConstraint: undefined
@@ -125,19 +126,40 @@ export default {
       if (!that.colorAssignedField.id) {
         that.colorAssignedField = that.$smt.fields.find(f => f.id === that.$smt.defaultColorAssignedFieldId)
       }
-      const q2 = {
-        constraints: this.query.constraints,
-        groupingOptions: [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
-      }
-      qe.queryVisual(q2).then(res => {
-        that.clearGeoJson()
-        that.geojsonObj = that.$observingLayer.add('geojson-survey', {
-          path: process.env.VUE_APP_SMT_SERVER + '/api/v1/hips/' + res
-          // Optional:
-          // max_fov: 30,
-          // min_fov: 10
+
+      const doVisualQuery = function () {
+        const q2 = {
+          constraints: that.query.constraints
+        }
+        if (that.colorAssignedField.widget === 'tags') {
+          q2.groupingOptions = [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
+        }
+        return qe.queryVisual(q2).then(res => {
+          that.clearGeoJson()
+          that.geojsonObj = that.$observingLayer.add('geojson-survey', {
+            path: process.env.VUE_APP_SMT_SERVER + '/api/v1/hips/' + res
+            // Optional:
+            // max_fov: 30,
+            // min_fov: 10
+          })
+          that.refreshGeojsonLiveFilter()
         })
-        that.refreshGeojsonLiveFilter()
+      }
+
+      if (that.colorAssignedField.widget === 'tags') {
+        return doVisualQuery()
+      }
+
+      // For other widgets, computing the color requires to know the min/max
+      // range first.
+      const q1 = {
+        constraints: this.query.constraints,
+        groupingOptions: [{ operation: 'GROUP_ALL' }],
+        aggregationOptions: [{ operation: 'MIN_MAX', fieldId: that.colorAssignedField.id, out: 'minmax' }]
+      }
+      qe.query(q1).then(res => {
+        that.colorAssignedFieldRange = res.res[0].minmax
+        return doVisualQuery()
       })
     },
     refreshAllFields: function () {
@@ -243,18 +265,27 @@ export default {
       that.refreshObservationsInSky()
     },
     cssColorForTag: function (val) {
-      console.log(val + ' ' + stringHash(val))
       const c = mapColor(stringHash(val) / 4294967295)
       c[3] = 0.3
       return 'rgba(' + c[0] * 255 + ',  ' + c[1] * 255 + ',  ' + c[2] * 255 + ',  ' + c[3] + ')'
     },
-    colorForFeatureProperties: function (featureProps) {
+    colorForFeature: function (feature) {
       const colorAssignedSqlField = qe.fId2AlaSql(this.colorAssignedField.id)
-      let cstring = Object.keys(_.get(featureProps, colorAssignedSqlField))[0]
-      if (!cstring) cstring = ''
-      const c = mapColor(stringHash(cstring) / 4294967295)
-      c[3] = 0.3
-      return c
+      if (this.colorAssignedField.widget === 'tags') {
+        const val = Object.keys(_.get(feature.properties, colorAssignedSqlField))
+        const cstring = val[0] || ''
+        const c = mapColor(stringHash(cstring) / 4294967295)
+        c[3] = 0.3
+        return c
+      } else {
+        const val = _.get(feature.properties, colorAssignedSqlField)
+        if (!val || val.length < 2) return [0.5, 0.5, 0.5, 0.3]
+        let nval = (val[0] + val[1]) / 2
+        nval = (nval - this.colorAssignedFieldRange[0]) / (this.colorAssignedFieldRange[1] - this.colorAssignedFieldRange[0])
+        const c = mapColor(nval)
+        c[3] = 0.3
+        return c
+      }
     },
     refreshGeojsonLiveFilter: function () {
       const that = this
@@ -285,7 +316,7 @@ export default {
           feature.colorDone = false
         }
         if (feature.colorDone) return { hidden: false }
-        const c = that.colorForFeatureProperties(feature.properties)
+        const c = that.colorForFeature(feature)
         feature.colorDone = true
         return {
           fill: c,
