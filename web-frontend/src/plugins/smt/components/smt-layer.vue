@@ -125,9 +125,9 @@ export default {
       const q2 = {
         constraints: that.query.constraints
       }
-      if (that.colorAssignedField.widget === 'tags') {
-        q2.groupingOptions = [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
-      }
+      // if (that.colorAssignedField.widget === 'tags') {
+      //  q2.groupingOptions = [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
+      // }
       return qe.queryVisual(q2).then(res => {
         that.clearGeoJson()
         that.geojsonObj = that.$observingLayer.add('geojson-survey', {
