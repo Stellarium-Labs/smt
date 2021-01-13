@@ -303,7 +303,7 @@ export default {
       that.geojsonObj.filter = function (feature) {
         if (liveConstraintSql) {
           const v = _.get(feature.properties, liveConstraintSql)
-          if (v === undefined || v[1] < lc.expression[0] || v[0] > lc.expression[1]) {
+          if (!v || v[1] < lc.expression[0] || v[0] > lc.expression[1]) {
             return { hidden: true }
           }
         }
