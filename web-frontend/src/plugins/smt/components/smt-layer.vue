@@ -11,6 +11,7 @@
 
 <template>
   <div style="height: 100%; display: flex; flex-flow: column;">
+    <smt-selection-info :selectedFeatures="selectedFootprintData" :query="query" @unselect="unselect()"></smt-selection-info>
     <v-card tile color="#424242">
       <v-card-text>
         <div class="display-1 text--primary">
@@ -53,6 +54,7 @@
 
 <script>
 import SmtField from './smt-field.vue'
+import SmtSelectionInfo from './smt-selection-info.vue'
 import Vue from 'vue'
 import Moment from 'moment'
 import murmurhash from 'murmurhash'
@@ -89,13 +91,14 @@ export default {
       selectedFootprintData: []
     }
   },
-  props: ['name'],
+  props: ['name', 'current'],
   created: function () {
     console.log('Created layer: ' + this.name)
   },
   beforeDestroy: function () {
     console.log('Destroying layer: ' + this.name)
     this.clearGeoJson()
+    this.$emit('unregisterClickCb', this.onClick)
   },
   methods: {
     clearGeoJson: function () {
@@ -370,6 +373,21 @@ export default {
     },
     unselect: function () {
       this.selectedFootprintData = []
+    },
+    onClick: function (e) {
+      if (!this.current) return false
+      if (!this.geojsonObj) return false
+      // Get the list of features indices at click position
+      const r = this.geojsonObj.queryRenderedFeatures(e.point)
+      let someFeatureHaveNoGeogroupId = false
+      r.forEach(f => { someFeatureHaveNoGeogroupId ||= (f.geogroup_id === undefined) })
+      if (r.length && r[0].geogroup_id && !someFeatureHaveNoGeogroupId) {
+        this.selectedFootprintData = r
+      } else {
+        this.selectedFootprintData = []
+        return false
+      }
+      return true
     }
   },
   watch: {
@@ -382,6 +400,9 @@ export default {
     },
     colorAssignedField: function () {
       this.refreshLayer()
+    },
+    current: function () {
+      if (!this.current) this.unselect()
     }
   },
   computed: {
@@ -441,24 +462,9 @@ export default {
   },
   mounted: function () {
     this.refreshLayer()
-    const that = this
-    // Manage geojson features selection
-    that.$stel.on('click', e => {
-      if (!that.geojsonObj) return false
-      // Get the list of features indices at click position
-      const r = that.geojsonObj.queryRenderedFeatures(e.point)
-      let someFeatureHaveNoGeogroupId = false
-      r.forEach(f => { someFeatureHaveNoGeogroupId ||= (f.geogroup_id === undefined) })
-      if (r.length && r[0].geogroup_id && !someFeatureHaveNoGeogroupId) {
-        that.selectedFootprintData = r
-      } else {
-        that.selectedFootprintData = []
-        return false
-      }
-      return true
-    })
+    this.$emit('registerClickCb', this.onClick)
   },
-  components: { SmtField }
+  components: { SmtField, SmtSelectionInfo }
 }
 </script>
 

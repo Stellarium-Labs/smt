@@ -12,7 +12,6 @@
 <template>
   <div style="height: 100%;">
     <img :src="watermarkImage" style="position: fixed; left: 5px; bottom: 5px; opacity: 0.7;"></img>
-    <smt-selection-info :selectedFeatures="selectedFootprintData" :query="query" @unselect="unselect()"></smt-selection-info>
     <smt-panel-root-toolbar></smt-panel-root-toolbar>
     <v-chip-group v-model="tab" center-active mandatory show-arrows active-class="chip-tab-active" style="margin-left: 5px; height: 38px;">
       <v-chip v-for="name in layersList" :key="name" color="#262626" close close-icon="mdi-close" class="chip-tab-inactive" label @click:close="delLayer(name)">{{ name }}</v-chip>
@@ -20,8 +19,8 @@
     </v-chip-group>
     <div style="height: calc(100% - 38px - 48px);">
       <v-tabs-items v-model="tab" style="height: 100%;">
-        <v-tab-item :eager="true" v-for="name in layersList" :key="name" style="height: 100%; display: flex; flex-flow: column;">
-          <smt-layer :name="name"></smt-layer>
+        <v-tab-item :eager="true" v-for="(name, index) in layersList" :key="index" style="height: 100%; display: flex; flex-flow: column;">
+          <smt-layer :name="name" :current="index === tab" v-on:registerClickCb="onRegisterClickCb" v-on:unregisterClickCb="onUnregisterClickCb"></smt-layer>
         </v-tab-item>
       </v-tabs-items>
     </div>
@@ -31,7 +30,6 @@
 
 <script>
 import SmtPanelRootToolbar from './smt-panel-root-toolbar.vue'
-import SmtSelectionInfo from './smt-selection-info.vue'
 import SmtLayer from './smt-layer.vue'
 
 export default {
@@ -39,9 +37,7 @@ export default {
     return {
       tab: null,
       layersList: [],
-      layerNameIdx: 2,
-      query: {}, // Remove me
-      selectedFootprintData: [] // Remove me
+      layerNameIdx: 2
     }
   },
   methods: {
@@ -60,6 +56,12 @@ export default {
       if (index !== -1) {
         this.layersList.splice(index, 1)
       }
+    },
+    onRegisterClickCb: function (cb) {
+      this.clickCallbacks.push(cb)
+    },
+    onUnregisterClickCb: function (cb) {
+      this.clickCallbacks = this.clickCallbacks.filter(item => item !== cb)
     }
   },
   watch: {
@@ -75,10 +77,19 @@ export default {
       return ''
     }
   },
-  mounted: function () {
-
+  created: function () {
+    this.clickCallbacks = []
   },
-  components: { SmtPanelRootToolbar, SmtSelectionInfo, SmtLayer }
+  mounted: function () {
+    // Manage geojson features selection
+    this.$stel.on('click', e => {
+      for (let i = 0; i < this.clickCallbacks.length; i++) {
+        if (this.clickCallbacks[i](e)) return true
+      }
+      return false
+    })
+  },
+  components: { SmtPanelRootToolbar, SmtLayer }
 }
 </script>
 
