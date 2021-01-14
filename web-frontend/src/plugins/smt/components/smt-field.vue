@@ -84,10 +84,11 @@ export default {
   border-radius: 12px;
   border-color: #2196f3 !important;
   width: calc(100% + 16px);
-  height:  calc(100% + 12px);
+  height:  calc(100% + 10px);
   position: absolute;
   z-index: 1;
   margin-left: -8px;
+  margin-top: 2px;
   pointer-events: none;
 }
 </style>

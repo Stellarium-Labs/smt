@@ -14,24 +14,30 @@
     <smt-selection-info :selectedFeatures="selectedFootprintData" :query="query" @unselect="unselect()"></smt-selection-info>
     <v-card tile color="#424242">
       <v-card-text>
+          <v-row no-gutters>
+            <v-col cols="1"><div style="padding-top: 7px;">Color</div></v-col>
+            <v-col cols="5">
+              <div>
+              <v-menu close-on-click>
+                <template v-slot:activator="{ on, attrs }">
+                  <v-btn x-small text elevation="3" dark v-bind="attrs" v-on="on">{{colorAssignedField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
+                </template>
+                <v-list>
+                  <v-list-item v-for="(item, index) in $smt.fields" :key="index" @click="colorAssignedField = item">
+                    <v-list-item-title>{{ item.name }}</v-list-item-title>
+                  </v-list-item>
+                </v-list>
+              </v-menu>
+              </div>
+            </v-col>
+            <v-col cols="2"><div class="pr-1 text-right" style="padding-top: 7px;">Opacity</div></v-col>
+            <v-col cols="4">
+              <v-slider dense max="255" min="0" v-model="opacitySliderValue"></v-slider>
+            </v-col>
+          </v-row>
         <div class="display-1 text--primary">
           <v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>
           {{ results.summary.count }} items
-        </div>
-        <div>Color assigned to:
-          <v-menu close-on-click>
-            <template v-slot:activator="{ on, attrs }">
-              <v-btn dark v-bind="attrs" v-on="on">{{colorAssignedField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
-            </template>
-            <v-list>
-              <v-list-item v-for="(item, index) in $smt.fields" :key="index" @click="colorAssignedField = item">
-                <v-list-item-title>{{ item.name }}</v-list-item-title>
-              </v-list-item>
-            </v-list>
-          </v-menu>
-        </div>
-        <div>
-          <v-slider max="255" min="0" v-model="opacitySliderValue" label="Opacity"></v-slider>
         </div>
         <div v-if="constraintsToDisplay.length" class="mt-2">Constraints:</div>
         <v-row no-gutters>
@@ -45,8 +51,8 @@
       </v-card-text>
     </v-card>
     <div class="scroll-container">
-      <v-container class="pl-0 pr-0" fluid style="height: 100%">
-        <v-container>
+      <v-container class="pl-0 pr-0 pt-0" fluid style="height: 100%">
+        <v-container class="pt-0">
           <smt-field class="mb-2" v-for="fr in resultsFieldsToDisplay" :key="fr.field.id" :fieldDescription="fr.field" :fieldResults="fr" v-on:add-constraint="addConstraint" v-on:remove-constraint="removeConstraint" v-on:constraint-live-changed="constraintLiveChanged">
           </smt-field>
         </v-container>
