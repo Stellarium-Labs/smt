@@ -18,7 +18,7 @@
           <v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>
           {{ results.summary.count }} items
         </div>
-        <div>Color assigned to field:
+        <div>Color assigned to:
           <v-menu close-on-click>
             <template v-slot:activator="{ on, attrs }">
               <v-btn dark v-bind="attrs" v-on="on">{{colorAssignedField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
@@ -29,6 +29,9 @@
               </v-list-item>
             </v-list>
           </v-menu>
+        </div>
+        <div>
+          <v-slider max="255" min="0" v-model="opacitySliderValue" label="Opacity"></v-slider>
         </div>
         <div v-if="constraintsToDisplay.length" class="mt-2">Constraints:</div>
         <v-row no-gutters>
@@ -74,6 +77,7 @@ const mapColor = function (v) {
 export default {
   data: function () {
     return {
+      opacitySliderValue: 0.3 * 255,
       colorAssignedField: { id: '', name: '' },
       colorAssignedFieldRange: [0, 1],
       query: {
@@ -266,7 +270,7 @@ export default {
     },
     cssColorForTag: function (val) {
       const c = mapColor(stringHash(val) / 4294967295)
-      c[3] = 0.3
+      c[3] = 0.4
       return 'rgba(' + c[0] * 255 + ',  ' + c[1] * 255 + ',  ' + c[2] * 255 + ',  ' + c[3] + ')'
     },
     colorForFeature: function (feature) {
@@ -274,8 +278,8 @@ export default {
       if (this.colorAssignedField.widget === 'tags') {
         const keysAndCount = _.get(feature.properties, colorAssignedSqlField)
         const val = Object.keys(keysAndCount)
-        if (!val || !val.length) return [0.5, 0.5, 0.5, 0.3]
-        const c = [0, 0, 0, 0.3]
+        if (!val || !val.length) return [0.5, 0.5, 0.5, this.opacity]
+        const c = [0, 0, 0, this.opacity]
         let total = 0
         val.forEach(v => {
           const cc = mapColor(stringHash(v || '') / 4294967295)
@@ -290,11 +294,11 @@ export default {
         return c
       } else {
         const val = _.get(feature.properties, colorAssignedSqlField)
-        if (!val || val.length < 2) return [0.5, 0.5, 0.5, 0.3]
+        if (!val || val.length < 2) return [0.5, 0.5, 0.5, this.opacity]
         let nval = (val[0] + val[1]) / 2
         nval = (nval - this.colorAssignedFieldRange[0]) / (this.colorAssignedFieldRange[1] - this.colorAssignedFieldRange[0])
         const c = mapColor(nval)
-        c[3] = 0.3
+        c[3] = this.opacity
         return c
       }
     },
@@ -326,9 +330,10 @@ export default {
           feature.selected = selected
           feature.colorDone = false
         }
-        if (feature.colorDone) return { hidden: false }
+        if (feature.colorDone && feature.opacity === that.opacity) return { hidden: false }
         const c = that.colorForFeature(feature)
         feature.colorDone = true
+        feature.opacity = that.opacity
         return {
           fill: c,
           stroke: [1, 0, 0, 0],
@@ -398,6 +403,9 @@ export default {
       // refresh the geojson live filter to make the selected object blink
       this.refreshGeojsonLiveFilter()
     },
+    opacity: function () {
+      this.refreshGeojsonLiveFilter()
+    },
     colorAssignedField: function () {
       this.refreshLayer()
     },
@@ -406,6 +414,9 @@ export default {
     }
   },
   computed: {
+    opacity: function () {
+      return this.opacitySliderValue / 255
+    },
     allColorFields: function () {
       return this.$smt ? this.$smt.fields.map(f => f.id) : []
     },
