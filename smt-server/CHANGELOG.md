@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.0] - 2021-01-14
+- Add support for multiple layers
+- Display performance improvements
+- Allow to assign color to a specific field, including for dates and numbers
+- Allow to specify layer opacity
+
 ## [0.1.2] - 2021-01-8
 - Add doc, and made quick start easier
 - Fix following data change
