@@ -127,7 +127,10 @@ export default {
     fieldResultsData: function () {
       if (this.fieldResults) {
         const newData = _.cloneDeep(this.fieldResults.data)
-        if (newData.table.length) newData.table[0].push({ role: 'annotation' })
+        if (newData.table.length) {
+          newData.table[0].push({ role: 'annotation' })
+          newData.table[0][2] = { role: 'style' }
+        }
         for (let i = 1; i < newData.table.length; ++i) {
           newData.table[i].push('' + newData.table[i][1])
         }
