@@ -24,6 +24,8 @@
 
 #include "utils/fps.h"
 
+#define CORE_MIN_FOV (1./3600 * DD2R)
+
 typedef struct core core_t;
 typedef struct task task_t;
 
@@ -88,6 +90,7 @@ struct core
 
     bool            flip_view_vertical;
     bool            flip_view_horizontal;
+    double          y_offset; // Rendering view Y offset (in windows unit).
 
     renderer_t      *rend;
     int             proj;
@@ -138,6 +141,8 @@ struct core
         double      dst_utc;
         int         mode;
     } time_animation;
+
+    double time_speed; // Time update speed factor: 0=stopped, 1=real time.
 
     fader_t refraction; // Toggle the observer refraction.
 

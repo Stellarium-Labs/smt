@@ -82,7 +82,7 @@ static void feature_add_geo(feature_t *feature, const geojson_geometry_t *geo)
     int *rings_size;
     const double (**rings_verts)[2];
     int i, size;
-    mesh_t *mesh;
+    mesh_t *mesh = NULL;
     geojson_geometry_t poly;
 
     switch (geo->type) {
@@ -92,7 +92,7 @@ static void feature_add_geo(feature_t *feature, const geojson_geometry_t *geo)
         mesh = calloc(1, sizeof(*mesh));
         mesh_add_line_lonlat(mesh, size, coordinates, false);
         DL_APPEND(feature->meshes, mesh);
-        return;
+        break;
 
     case GEOJSON_POLYGON:
         mesh = calloc(1, sizeof(*mesh));
@@ -107,14 +107,14 @@ static void feature_add_geo(feature_t *feature, const geojson_geometry_t *geo)
         free(rings_verts);
 
         DL_APPEND(feature->meshes, mesh);
-        return;
+        break;
 
     case GEOJSON_POINT:
         coordinates = &geo->point.coordinates;
         mesh = calloc(1, sizeof(*mesh));
         mesh_add_point_lonlat(mesh, coordinates[0]);
         DL_APPEND(feature->meshes, mesh);
-        return;
+        break;
 
     case GEOJSON_MULTIPOLYGON:
         for (i = 0; i < geo->multipolygon.size; i++) {
@@ -122,11 +122,13 @@ static void feature_add_geo(feature_t *feature, const geojson_geometry_t *geo)
             poly.polygon = geo->multipolygon.polygons[i];
             feature_add_geo(feature, &poly);
         }
-        return;
+        break;
+
     default:
         assert(false);
         return;
     }
+    if (mesh) mesh_update_bounding_cap(mesh);
 }
 
 static void add_geojson_feature(image_t *image,
@@ -547,6 +549,7 @@ static const void *survey_create_tile(
         if (g_survey_on_new_tile)
             g_survey_on_new_tile(tile, data);
     }
+    json_builder_free(jdata);
 
     return tile;
 }
@@ -561,6 +564,8 @@ static int survey_init(obj_t *obj, json_value *args)
     survey_t *survey = (void*)obj;
     const char *path;
     int r;
+    static int counter = 0;
+
     hips_settings_t settings = {
         .create_tile = survey_create_tile,
         .delete_tile = survey_delete_tile,
@@ -582,6 +587,12 @@ static int survey_init(obj_t *obj, json_value *args)
     survey->min_fov *= DD2R;
     survey->max_fov *= DD2R;
     survey->hips = hips_create(path, 0, &settings);
+
+    // Manually change the hash so that even surveys with same url are
+    // considered independent, since we dynamically change the tiles
+    // attributes with the filters.
+    survey->hips->hash += counter++;
+
     hips_set_frame(survey->hips, FRAME_ICRF);
     return 0;
 }
@@ -650,6 +661,7 @@ static int survey_render(const obj_t *obj, const painter_t *painter)
 static json_value *survey_filter_fn(obj_t *obj, const attribute_t *attr,
                                     const json_value *args)
 {
+    static int filter_idx = 1;
     survey_t *survey = (void*)obj;
     if (!args) return NULL;
     if (args->type != json_integer) {
@@ -657,7 +669,7 @@ static json_value *survey_filter_fn(obj_t *obj, const attribute_t *attr,
         return NULL;
     }
     survey->filter = (void*)(intptr_t)(args->u.integer);
-    survey->filter_idx++;
+    survey->filter_idx = filter_idx++;
     return NULL;
 }
 
