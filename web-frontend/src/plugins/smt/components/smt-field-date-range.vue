@@ -12,17 +12,12 @@
 <template>
   <v-col cols="12">
     <v-row no-gutters>
-      <v-col cols="10">
+      <v-col cols="12">
         <GChart type="ColumnChart" :data="fieldResultsData.table" :options="dateRangeChartOptions"  style="margin-bottom: -10px; height: 120px"/>
       </v-col>
-      <v-col cols="2"><v-btn v-if="wasChanged" small fab @click="cancelButtonClicked"><v-icon>mdi-close</v-icon></v-btn></v-col>
-      <v-col cols="10">
+      <v-col cols="12">
         <v-range-slider hide-details class="px-3 my-0" v-model="dateRangeSliderValues" :min="dateRange[0]" :max="dateRange[1]" v-on:start="isUserDragging = true" v-on:end="isUserDragging = false"></v-range-slider>
       </v-col>
-      <v-col cols="2" style="margin-top: -10px">
-        <v-btn small fab :disabled="!wasChanged" @click="rangeButtonClicked">Add</v-btn>
-      </v-col>
-      <v-col cols="1"></v-col>
       <v-col cols="4">
         <v-text-field dense solo v-mask="dateMask" :rules="[rules.required, rules.date]" :value="formatDate(dateRangeSliderValues[0])" @change="rangeMinTextuallyChanged"></v-text-field>
       </v-col>
@@ -30,8 +25,12 @@
       <v-col cols="4">
         <v-text-field dense solo v-mask="dateMask" :rules="[rules.required, rules.date]" :value="formatDate(dateRangeSliderValues[1])" @change="rangeMaxTextuallyChanged"></v-text-field>
       </v-col>
-      <v-col cols="2"></v-col>
+      <v-col cols="1"></v-col>
+      <v-col cols="2" style="margin-top: -10px">
+        <v-btn small fab :disabled="!wasChanged" @click="rangeButtonClicked">Add</v-btn>
+      </v-col>
     </v-row>
+    <v-btn style="position: absolute; right: 5px; top: 25px;" v-if="wasChanged" small fab @click="cancelButtonClicked"><v-icon>mdi-close</v-icon></v-btn>
   </v-col>
 </template>
 

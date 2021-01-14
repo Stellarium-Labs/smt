@@ -12,17 +12,12 @@
 <template>
   <v-col cols="12">
     <v-row no-gutters>
-      <v-col cols="10">
+      <v-col cols="12">
         <GChart type="ColumnChart" :data="fieldResultsData.table" :options="rangeChartOptions"  style="margin-bottom: -10px; height: 120px"/>
       </v-col>
-      <v-col cols="2"><v-btn v-if="wasChanged" small fab @click="cancelButtonClicked"><v-icon>mdi-close</v-icon></v-btn></v-col>
-      <v-col cols="10">
+      <v-col cols="12">
         <v-range-slider hide-details class="px-3 my-0" v-model="rangeSliderValues" :min="range[0]" :max="range[1]" v-on:start="isUserDragging = true" v-on:end="isUserDragging = false"></v-range-slider>
       </v-col>
-      <v-col cols="2" style="margin-top: -10px">
-        <v-btn small fab :disabled="!wasChanged" @click="rangeButtonClicked">Add</v-btn>
-      </v-col>
-      <v-col cols="1"></v-col>
       <v-col cols="4">
         <v-text-field dense solo single-line hide-details readonly :value="formatValue(rangeSliderValues[0])"></v-text-field>
       </v-col>
@@ -30,8 +25,10 @@
       <v-col cols="4">
         <v-text-field dense solo single-line hide-details readonly :value="formatValue(rangeSliderValues[1])"></v-text-field>
       </v-col>
-      <v-col cols="2"></v-col>
+      <v-col cols="1"></v-col>
+      <v-col cols="2" style="margin-top: -10px"><v-btn small fab :disabled="!wasChanged" @click="rangeButtonClicked">Add</v-btn></v-col>
     </v-row>
+    <v-btn style="position: absolute; right: 5px; top: 25px;" v-if="wasChanged" small fab @click="cancelButtonClicked"><v-icon>mdi-close</v-icon></v-btn>
   </v-col>
 </template>
 
