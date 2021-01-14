@@ -269,10 +269,21 @@ export default {
     colorForFeature: function (feature) {
       const colorAssignedSqlField = qe.fId2AlaSql(this.colorAssignedField.id)
       if (this.colorAssignedField.widget === 'tags') {
-        const val = Object.keys(_.get(feature.properties, colorAssignedSqlField))
-        const cstring = val[0] || ''
-        const c = mapColor(stringHash(cstring) / 4294967295)
-        c[3] = 0.3
+        const keysAndCount = _.get(feature.properties, colorAssignedSqlField)
+        const val = Object.keys(keysAndCount)
+        if (!val || !val.length) return [0.5, 0.5, 0.5, 0.3]
+        const c = [0, 0, 0, 0.3]
+        let total = 0
+        val.forEach(v => {
+          const cc = mapColor(stringHash(v || '') / 4294967295)
+          c[0] += cc[0] * keysAndCount[v]
+          c[1] += cc[1] * keysAndCount[v]
+          c[2] += cc[2] * keysAndCount[v]
+          total += keysAndCount[v]
+        })
+        c[0] /= total
+        c[1] /= total
+        c[2] /= total
         return c
       } else {
         const val = _.get(feature.properties, colorAssignedSqlField)
