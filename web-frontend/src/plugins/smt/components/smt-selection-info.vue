@@ -20,7 +20,16 @@
         </div>
       </v-card-title>
       <v-card-text>
-        <vue-json-pretty :data="currentItem" :deep="2" :showLength="true" :showDoubleQuotes="false" :showLine="false"></vue-json-pretty>
+        <template v-for="(item, key) in currentItem.fields">
+          <v-row style="width: 100%" :key="key" no-gutters>
+            <v-col cols="4" style="color: #dddddd">{{ key }}</v-col>
+            <v-col cols="8" style="font-weight: 500" class="white--text"><span v-html="item"></span></v-col>
+          </v-row>
+        </template>
+        <v-row style="width: 100%" no-gutters>
+          <v-col cols="4" style="color: #dddddd">properties</v-col>
+          <v-col cols="8" class="white--text"><vue-json-pretty :data="currentItem.properties" :deep="0" :showLength="true" :showDoubleQuotes="false"></vue-json-pretty></v-col>
+        </v-row>
       </v-card-text>
     </v-card>
   </v-container>
@@ -40,7 +49,14 @@ export default {
   props: ['selectedFeatures', 'query'],
   computed: {
     currentItem: function () {
-      return this.selectionData && this.selectionData.features.length ? this.selectionData.features[this.currentIndex].properties : {}
+      if (!this.selectionData || !this.selectionData.features.length) return { properties: {} }
+      const props = this.selectionData.features[this.currentIndex].properties
+      const ret = { fields: {}, properties: props }
+      for (const key in props) {
+        const field = this.$smt.fields.find(f => f.id === key)
+        if (field) ret.fields[field.name] = props[key]
+      }
+      return ret
     }
   },
   methods: {
