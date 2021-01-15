@@ -153,8 +153,9 @@ export default {
     })
 
     if (!dbAlreadyExists) {
-      let info = db.prepare('CREATE TABLE features (id TEXT, geometry TEXT, healpix_index INT, geogroup_id TEXT, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
+      let info = db.prepare('CREATE TABLE features (id TEXT, id0 INT, geometry TEXT, healpix_index INT, geogroup_id TEXT, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
       db.prepare('CREATE INDEX idx_id ON features(id)').run()
+      db.prepare('CREATE INDEX idx_id0 ON features(id0)').run()
       db.prepare('CREATE INDEX idx_healpix_index ON features(healpix_index)').run()
       db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
 
@@ -189,7 +190,12 @@ export default {
       }
       feature.geogroup_id = _.get(feature.properties, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
       feature.id = that.fcounter++
-      subFeatures = subFeatures.concat(geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER))
+      const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
+      for (let j = 0; j < newSubs.length; ++j) {
+        // id0 is set to 1 for the first subfeature having this id, 0 for the other
+        newSubs[j].id0 = (j === 0 ? 1 : 0)
+      }
+      subFeatures = subFeatures.concat(newSubs)
     })
     for (let feature of subFeatures) {
       for (let i = 0; i < that.fieldsList.length; ++i) {
@@ -209,7 +215,7 @@ export default {
       feature.geometry = '__JSON' + JSON.stringify(feature.geometry)
       feature.properties = '__JSON' + JSON.stringify(feature.properties)
     }
-    const insert = that.db.prepare('INSERT INTO features VALUES (@id, @geometry, @healpix_index, @geogroup_id, @properties, ' + that.sqlFields.map(f => '@' + f).join(',') + ')')
+    const insert = that.db.prepare('INSERT INTO features VALUES (@id, @id0, @geometry, @healpix_index, @geogroup_id, @properties, ' + that.sqlFields.map(f => '@' + f).join(',') + ')')
     const insertMany = that.db.transaction((features) => {
       for (const feature of features)
         insert.run(feature)
@@ -284,6 +290,16 @@ export default {
   query: function (q) {
     let that = this
     let whereClause = this.constraints2SQLWhereClause(q.constraints)
+
+    // Return only entries with id0 = 1 to ensure that we don't return all
+    // pieces of sub-features split on each healpix pixel as separate entries
+    // In some case, when the query work on healpix_index, we do want to
+    // consider each pieces as a separated entry, in such case the constraint is
+    // released
+    if (!q.onSubFeatures) {
+      whereClause += (whereClause === '' ? ' WHERE ' : ' AND ') + ' id0 = 1'
+    }
+
     if (q.limit && Number.isInteger(q.limit)) {
       whereClause += ' LIMIT ' + q.limit
     }
@@ -297,12 +313,7 @@ export default {
       selectClause += Object.keys(q.projectOptions).map(k => that.fId2AlaSql(k)).join(', ')
     }
 
-    // Use a sub-query to ensure that we don't return all pieces of features
-    // split on each helpix pixel as separate entries
-    // In some case, when the query work on healpix_index, we do want to
-    // consider each pieces as a separated entry, in such case the onSubFeatures
-    // flag has to be defined.
-    const fromClause = ' FROM ' + (q.onSubFeatures ? 'features' : '(SELECT * FROM features GROUP BY id)')
+    const fromClause = ' FROM features'
 
     if (q.aggregationOptions) {
       // We can't do much more than group all using SQL language
