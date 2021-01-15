@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1] - 2021-01-15
+- Show colors in histogram to match the sky content
+- Fix number range sort order when some values are negative
+- Add inline fields description when available in the smtConfig.json file
+- Various styling improvements
+- Improve server performances for standard queries
+
 ## [0.2.0] - 2021-01-14
 - Add support for multiple layers
 - Display performance improvements
