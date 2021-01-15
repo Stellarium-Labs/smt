@@ -95,7 +95,7 @@ export default {
   data: function () {
     return {
       opacitySliderValue: 0.3 * 255,
-      colorAssignedField: { id: '', name: '' },
+      colorAssignedField: this.$smt.fields.find(f => f.id === this.$smt.defaultColorAssignedFieldId),
       colorAssignedFieldRange: [0, 1],
       query: {
         constraints: [],
@@ -295,9 +295,6 @@ export default {
       that.results.implicitConstraints = []
       that.results.summary.count = undefined
 
-      if (!that.colorAssignedField.id) {
-        that.colorAssignedField = that.$smt.fields.find(f => f.id === that.$smt.defaultColorAssignedFieldId)
-      }
       if (that.colorAssignedField.widget !== 'tags') {
         // For later steps, computing the color requires to know the min/max range first.
         const q = {
