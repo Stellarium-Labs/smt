@@ -28,6 +28,7 @@ export default {
   fieldsList: undefined,
   fieldsMap: undefined,
   sqlFields: undefined,
+  quickTestMode: undefined,
   db: undefined,
 
   // Internal counter used to assign IDs
@@ -59,6 +60,7 @@ export default {
     const smtConfig = JSON.parse(fs.readFileSync(__dirname + '/data/smtConfig.json'))
 
     // Initialize modules's attributes based on the config file
+    that.quickTestMode = smtConfig.quick_test_mode
     that.fieldsList = _.cloneDeep(smtConfig.fields)
     that.fieldsMap = {}
     for (let i in that.fieldsList) {
@@ -171,9 +173,12 @@ export default {
   },
 
   ingestGeoJson: function (jsonData) {
-    console.log('Loading ' + jsonData.features.length + ' features')
     let that = this
 
+    if (that.quickTestMode) {
+      jsonData.features = jsonData.features.slice(0, 100)
+    }
+    console.log('Loading ' + jsonData.features.length + ' features' + (that.quickTestMode ? ' (quick test mode)' : ''))
     geo_utils.normalizeGeoJson(jsonData)
 
     // Insert all data
