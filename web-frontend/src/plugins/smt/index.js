@@ -56,7 +56,7 @@ export default {
     app.$store.commit('setValue', { varName: 'showTimeButtons', newValue: false })
     app.$store.commit('setValue', { varName: 'showFPS', newValue: true })
 
-    return qe.initDB().then(smtConfig => {
+    return qe.init().then(smtConfig => {
       const filtrexOptions = {
         extraFunctions: { sprintf: (fmt, x) => sprintfjs.sprintf(fmt, x) }
       }

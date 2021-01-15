@@ -321,9 +321,8 @@ export default {
       return 'rgba(' + c[0] * 255 + ',  ' + c[1] * 255 + ',  ' + c[2] * 255 + ',  ' + c[3] + ')'
     },
     colorForFeature: function (feature) {
-      const colorAssignedSqlField = qe.fId2AlaSql(this.colorAssignedField.id)
       if (this.colorAssignedField.widget === 'tags') {
-        const keysAndCount = _.get(feature.properties, colorAssignedSqlField)
+        const keysAndCount = _.get(feature.properties, this.colorAssignedField.id)
         const val = Object.keys(keysAndCount)
         if (!val || !val.length) return [0.5, 0.5, 0.5, this.opacity]
         const c = [0, 0, 0, this.opacity]
@@ -340,7 +339,7 @@ export default {
         c[2] /= total
         return c
       } else {
-        const val = _.get(feature.properties, colorAssignedSqlField)
+        const val = _.get(feature.properties, this.colorAssignedField.id)
         if (!val || val.length < 2) return [0.5, 0.5, 0.5, this.opacity]
         let nval = (val[0] + val[1]) / 2
         nval = (nval - this.colorAssignedFieldRange[0]) / (this.colorAssignedFieldRange[1] - this.colorAssignedFieldRange[0])
@@ -359,10 +358,10 @@ export default {
       if (lc) {
         const lcField = that.$smt.fields.find(f => f.id === lc.fieldId)
         if (lcField.widget === 'date_range' && lc.operation === 'DATE_RANGE') {
-          liveConstraintSql = qe.fId2AlaSql(lc.fieldId)
+          liveConstraintSql = lc.fieldId
         }
         if (lcField.widget === 'number_range' && lc.operation === 'NUMBER_RANGE') {
-          liveConstraintSql = qe.fId2AlaSql(lc.fieldId)
+          liveConstraintSql = lc.fieldId
         }
       }
       that.geojsonObj.filter = function (feature) {
