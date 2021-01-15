@@ -461,7 +461,9 @@ export default {
             that.postProcessSQLiteResult(res2[j])
             tmpTable['' + res2[j].d] = res2[j].c
           }
-          Object.keys(tmpTable).forEach(function (key) {
+          let keys = Object.keys(tmpTable)
+          keys.sort((a, b) => parseFloat(a) - parseFloat(b))
+          keys.forEach(function (key) {
             data.table.push([key, tmpTable[key]])
           })
           let retd = {}
