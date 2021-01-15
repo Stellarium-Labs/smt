@@ -20,10 +20,18 @@
         </div>
       </v-card-title>
       <v-card-text>
-        <template v-for="(item, key) in currentItem.fields">
-          <v-row style="width: 100%" :key="key" no-gutters>
-            <v-col cols="4" style="color: #dddddd">{{ key }}</v-col>
-            <v-col cols="8" style="font-weight: 500" class="white--text"><span v-html="item"></span></v-col>
+        <template v-for="(item) in currentItem.fields">
+          <v-row style="width: 100%" :key="item.field.id" no-gutters>
+            <v-col cols="4" style="color: #dddddd">
+              <v-tooltip v-if="item.field.description" top max-width="300" color="#000000">
+                <template v-slot:activator="{ on, attrs }">
+                  <span :class="{dottedUnderline: item.field.description}" v-bind="attrs" v-on="on">{{ item.field.name }}</span>
+                </template>
+                <div>{{ item.field.description }}</div>
+              </v-tooltip>
+              <span v-else>{{ item.field.name }}</span>
+            </v-col>
+            <v-col cols="8" style="font-weight: 500" class="white--text"><span v-html="item.value"></span></v-col>
           </v-row>
         </template>
         <v-row style="width: 100%" no-gutters>
@@ -49,12 +57,12 @@ export default {
   props: ['selectedFeatures', 'query'],
   computed: {
     currentItem: function () {
-      if (!this.selectionData || !this.selectionData.features.length) return { properties: {} }
+      if (!this.selectionData || !this.selectionData.features.length) return { fields: [], properties: {} }
       const props = this.selectionData.features[this.currentIndex].properties
       const ret = { fields: {}, properties: props }
       for (const key in props) {
         const field = this.$smt.fields.find(f => f.id === key)
-        if (field) ret.fields[field.name] = props[key]
+        if (field) ret.fields[field.name] = { field: field, value: props[key] }
       }
       return ret
     }
@@ -125,5 +133,10 @@ export default {
   max-height: calc(100% - 150px);
   overflow-y: auto;
   backface-visibility: hidden;
+}
+
+.dottedUnderline {
+  border-bottom: 1px dotted;
+  border-color: #888888;
 }
 </style>

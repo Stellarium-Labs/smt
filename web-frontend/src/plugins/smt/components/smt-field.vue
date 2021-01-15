@@ -13,7 +13,14 @@
   <v-row no-gutters style="position: relative">
     <div :class="{rowedited: fieldResults.edited}"></div>
     <v-col cols="12">
-      <h3 class="pt-3 line_right">{{ fieldDescription.name }}</h3>
+      <h3 class="pt-3 line_right">{{ fieldDescription.name }}
+        <v-tooltip v-if="fieldDescription.description" top max-width="300" color="#000000">
+          <template v-slot:activator="{ on, attrs }">
+            <v-icon class="pl-2 mb-1" color="#444444" small dark v-bind="attrs" v-on="on">mdi-help-circle-outline</v-icon>
+          </template>
+          <div>{{ fieldDescription.description }}</div>
+        </v-tooltip>
+      </h3>
     </v-col>
     <smt-field-chips v-if="isTags" :fieldResults="fieldResults" v-on:add-constraint="addConstraint" v-on:remove-constraint="removeConstraint"></smt-field-chips>
     <smt-field-date-range v-if="isDateRange" :fieldResults="fieldResults" v-on:add-constraint="addConstraint" v-on:constraint-live-changed="constraintLiveChanged"></smt-field-date-range>
