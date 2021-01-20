@@ -153,16 +153,20 @@ export default {
     })
 
     if (!dbAlreadyExists) {
-      let info = db.prepare('CREATE TABLE features (id TEXT, id0 INT, geometry TEXT, healpix_index INT, geogroup_id TEXT, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
+      db.prepare('CREATE TABLE features (id TEXT, geometry TEXT, geogroup_id TEXT, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
       db.prepare('CREATE INDEX idx_id ON features(id)').run()
-      db.prepare('CREATE INDEX idx_id0 ON features(id0)').run()
-      db.prepare('CREATE INDEX idx_healpix_index ON features(healpix_index)').run()
       db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
+
+      db.prepare('CREATE TABLE subfeatures (id TEXT, geometry TEXT, healpix_index INT, geogroup_id TEXT, ' + sqlFieldsAndTypes + ')').run()
+      db.prepare('CREATE INDEX idxsub_id ON subfeatures(id)').run()
+      db.prepare('CREATE INDEX idxsub_geogroup_id ON subfeatures(geogroup_id)').run()
+      db.prepare('CREATE INDEX idxsub_healpix_index ON subfeatures(healpix_index)').run()
 
       // Create an index on each field
       for (let i in that.sqlFields) {
         const field = that.sqlFields[i]
         db.prepare('CREATE INDEX idx_' + i + ' ON features(' + field + ')').run()
+        db.prepare('CREATE INDEX idxsub_' + i + ' ON subfeatures(' + field + ')').run()
       }
     }
 
@@ -184,6 +188,7 @@ export default {
 
     // Insert all data
     let subFeatures = []
+    let allFeatures = []
     turf.featureEach(jsonData, function (feature, featureIndex) {
       if (feature.geometry.type === 'MultiPolygon') {
         geo_utils.unionMergeMultiPolygon(feature)
@@ -208,30 +213,40 @@ export default {
         sqlValues[that.sqlFields[i]] = d
       }
 
+      const f = {
+        id: feature.id,
+        geogroup_id: feature.geogroup_id,
+        properties: '__JSON' + JSON.stringify(feature.properties),
+        geometry: '__JSON' + JSON.stringify(feature.geometry)
+      }
+      _.assign(f, sqlValues)
+      allFeatures.push(f)
+
       const origProperties = feature.properties
       feature.properties = undefined
       const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
       for (let j = 0; j < newSubs.length; ++j) {
-        // id0 is set to 1 for the first subfeature having this id, 0 for the other
         const subF = newSubs[j]
-        if (j === 0) {
-          subF.id0 = 1
-          subF.properties = '__JSON' + JSON.stringify(origProperties)
-        } else {
-          subF.id0 = 0
-        }
         subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
         _.assign(subF, sqlValues)
       }
       subFeatures = subFeatures.concat(newSubs)
       feature.properties = origProperties
     })
-    const insert = that.db.prepare('INSERT INTO features VALUES (@id, @id0, @geometry, @healpix_index, @geogroup_id, @properties, ' + that.sqlFields.map(f => '@' + f).join(',') + ')')
+
+    const insert = that.db.prepare('INSERT INTO features VALUES (@id, @geometry, @geogroup_id, @properties, ' + that.sqlFields.map(f => '@' + f).join(',') + ')')
     const insertMany = that.db.transaction((features) => {
       for (const feature of features)
         insert.run(feature)
     })
-    insertMany(subFeatures)
+    insertMany(allFeatures)
+
+    const insertSub = that.db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @healpix_index, @geogroup_id, ' + that.sqlFields.map(f => '@' + f).join(',') + ')')
+    const insertManySub = that.db.transaction((features) => {
+      for (const feature of features)
+        insertSub.run(feature)
+    })
+    insertManySub(subFeatures)
   },
 
   // Construct the SQL WHERE clause matching the given constraints
@@ -301,15 +316,6 @@ export default {
   query: function (q) {
     let that = this
     let whereClause = this.constraints2SQLWhereClause(q.constraints)
-
-    // Return only entries with id0 = 1 to ensure that we don't return all
-    // pieces of sub-features split on each healpix pixel as separate entries
-    // In some case, when the query work on healpix_index, we do want to
-    // consider each pieces as a separated entry, in such case the constraint is
-    // released
-    if (!q.onSubFeatures) {
-      whereClause += (whereClause === '' ? ' WHERE ' : ' AND ') + ' id0 = 1'
-    }
 
     if (q.limit && Number.isInteger(q.limit)) {
       whereClause += ' LIMIT ' + q.limit
@@ -527,7 +533,7 @@ export default {
     let selectClause = 'SELECT '
     selectClause += this.fieldsList.filter(f => f.widget !== 'tags').map(f => that.fId2AlaSql(f.id)).map(k => 'MIN_MAX(' + k + ') as ' + k).join(', ')
     selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => that.fId2AlaSql(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ') as ' + k).join(', ')
-    selectClause += ', COUNT(*) as c, healpix_index ' + (LOD_LEVEL === 0 ? '' : ', geogroup_id, geometry ') + 'FROM features '
+    selectClause += ', COUNT(*) as c, healpix_index ' + (LOD_LEVEL === 0 ? '' : ', geogroup_id, geometry ') + 'FROM subfeatures '
     let sqlStatement = selectClause + whereClause
     if (tileId !== -1) {
       let extraGroupBy = ''
