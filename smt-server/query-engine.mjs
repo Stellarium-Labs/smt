@@ -190,14 +190,9 @@ export default {
       }
       feature.geogroup_id = _.get(feature, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
       feature.id = that.fcounter++
-      const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
-      for (let j = 0; j < newSubs.length; ++j) {
-        // id0 is set to 1 for the first subfeature having this id, 0 for the other
-        newSubs[j].id0 = (j === 0 ? 1 : 0)
-      }
-      subFeatures = subFeatures.concat(newSubs)
-    })
-    for (let feature of subFeatures) {
+
+      // Prepare all values to insert in SQL DB
+      const sqlValues = {}
       for (let i = 0; i < that.fieldsList.length; ++i) {
         const field = that.fieldsList[i]
         let d
@@ -210,11 +205,27 @@ export default {
             d = new Date(d).getTime()
           }
         }
-        feature[that.sqlFields[i]] = d
+        sqlValues[that.sqlFields[i]] = d
       }
-      feature.geometry = '__JSON' + JSON.stringify(feature.geometry)
-      feature.properties = '__JSON' + JSON.stringify(feature.properties)
-    }
+
+      const origProperties = feature.properties
+      feature.properties = undefined
+      const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
+      for (let j = 0; j < newSubs.length; ++j) {
+        // id0 is set to 1 for the first subfeature having this id, 0 for the other
+        const subF = newSubs[j]
+        if (j === 0) {
+          subF.id0 = 1
+          subF.properties = '__JSON' + JSON.stringify(origProperties)
+        } else {
+          subF.id0 = 0
+        }
+        subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
+        _.assign(subF, sqlValues)
+      }
+      subFeatures = subFeatures.concat(newSubs)
+      feature.properties = origProperties
+    })
     const insert = that.db.prepare('INSERT INTO features VALUES (@id, @id0, @geometry, @healpix_index, @geogroup_id, @properties, ' + that.sqlFields.map(f => '@' + f).join(',') + ')')
     const insertMany = that.db.transaction((features) => {
       for (const feature of features)
