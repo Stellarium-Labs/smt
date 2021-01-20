@@ -67,6 +67,9 @@ export default {
       return ret
     }
   },
+  beforeDestroy: function () {
+    this.clearFootprint()
+  },
   methods: {
     unselect: function () {
       this.$emit('unselect')
@@ -78,6 +81,37 @@ export default {
     incIndex: function () {
       if (this.currentIndex >= this.selectionData.features.length - 1) this.currentIndex = 0
       else this.currentIndex++
+    },
+    clearFootprint: function () {
+      if (this.geojsonObj) {
+        this.$observingLayer.remove(this.geojsonObj)
+        this.geojsonObj.destroy()
+        this.geojsonObj = undefined
+      }
+    },
+    refreshFootprint: function () {
+      this.clearFootprint()
+      if (!this.selectionData || !this.selectionData.features) return
+      const feature = this.selectionData.features[this.currentIndex]
+      const geojson = {
+        type: 'FeatureCollection',
+        features: [{
+          geometry: feature.geometry,
+          type: 'Feature',
+          properties: {}
+        }]
+      }
+      this.geojsonObj = this.$stel.createObj('geojson')
+      this.geojsonObj.filter = function (feature) {
+        return {
+          fill: [1, 0, 0, 1],
+          stroke: [1, 1, 1, 1],
+          hidden: false,
+          blink: true
+        }
+      }
+      this.geojsonObj.setData(geojson)
+      this.$observingLayer.add(this.geojsonObj)
     }
   },
   watch: {
@@ -98,7 +132,8 @@ export default {
         ],
         projectOptions: {
           id: 1,
-          properties: 1
+          properties: 1,
+          geometry: 1
         },
         limit: 500
       }
@@ -113,8 +148,15 @@ export default {
           count: featuresCount,
           features: qres.res
         }
+        that.refreshFootprint()
         console.assert(featuresCount === qres.res.length)
       })
+    },
+    currentIndex: function () {
+      this.refreshFootprint()
+    },
+    selectionData: function () {
+      this.refreshFootprint()
     }
   },
   components: { VueJsonPretty }
