@@ -190,7 +190,7 @@ export default {
     // For large footprints, we return -1 so that it goes in the AllSky order
     if (area * STERADIAN_TO_DEG2 > 25) {
       feature['healpix_index'] = -1
-      return [feature]
+      return [_.cloneDeep(feature)]
     }
     let center = turf.centroid(feature)
     assert(center)
