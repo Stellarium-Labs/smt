@@ -63,6 +63,19 @@ export default {
     app.$store.commit('setValue', { varName: 'showPlanetsVisibilityMenuItem', newValue: false })
     app.$store.commit('setValue', { varName: 'showViewSettingsMenuItem', newValue: false })
 
+    // Add all data sources.
+    const doUrl = 'https://stellarium.sfo2.cdn.digitaloceanspaces.com/'
+    const core = app.$stel.core
+    core.stars.addDataSource({ url: doUrl + 'swe-data-packs/minimal-2020-01-31-4c9cbfbe/stars', key: 'minimal' })
+    core.stars.addDataSource({ url: doUrl + 'swe-data-packs/base-2020-01-31-8b663edc/stars', key: 'base' })
+    core.stars.addDataSource({ url: doUrl + 'swe-data-packs/extended-2020-01-31-176f8caf/stars', key: 'extended' })
+    core.stars.addDataSource({ url: doUrl + 'surveys/gaia/v1', key: 'gaia' })
+    core.milkyway.addDataSource({ url: doUrl + 'surveys/milkyway/v1' })
+    core.dss.addDataSource({ url: doUrl + 'surveys/dss/v1' })
+    core.dsos.addDataSource({ url: doUrl + 'swe-data-packs/base-2020-01-31-8b663edc/dso' })
+    core.dsos.addDataSource({ url: doUrl + 'swe-data-packs/extended-2020-01-31-176f8caf/dso' })
+    app.dataSourceInitDone = true
+
     return qe.init().then(smtConfig => {
       const filtrexOptions = {
         extraFunctions: { sprintf: (fmt, x) => sprintfjs.sprintf(fmt, x) }
