@@ -9,6 +9,8 @@
 // This file is part of the Survey Monitoring Tool plugin, which received
 // funding from the Centre national d'études spatiales (CNES).
 
+import marked from 'marked'
+
 export default {
   fieldsList: undefined,
   smtServerInfo: undefined,
@@ -31,6 +33,9 @@ export default {
       }
     })
     const smtConfig = await resp.json()
+    for (const f of smtConfig.fields) {
+      f.description_html = marked(f.description)
+    }
     that.fieldsList = smtConfig.fields
 
     return smtConfig

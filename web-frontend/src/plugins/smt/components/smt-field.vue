@@ -18,7 +18,7 @@
           <template v-slot:activator="{ on, attrs }">
             <v-icon class="pl-2 mb-1" color="#444444" small dark v-bind="attrs" v-on="on">mdi-help-circle-outline</v-icon>
           </template>
-          <div>{{ fieldDescription.description }}</div>
+          <div v-html="fieldDescription.description_html"></div>
         </v-tooltip>
       </h3>
     </v-col>

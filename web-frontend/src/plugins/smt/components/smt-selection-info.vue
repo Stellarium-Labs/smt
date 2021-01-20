@@ -27,7 +27,7 @@
                 <template v-slot:activator="{ on, attrs }">
                   <span :class="{dottedUnderline: item.field.description}" v-bind="attrs" v-on="on">{{ item.field.name }}</span>
                 </template>
-                <div>{{ item.field.description }}</div>
+                <div v-html="item.field.description_html"></div>
               </v-tooltip>
               <span v-else>{{ item.field.name }}</span>
             </v-col>
