@@ -92,11 +92,9 @@ export default {
       let featuresCount = 0
       this.selectedFeatures.forEach(f => { featuresCount += f.geogroup_size })
       const geogroupIds = this.selectedFeatures.map(f => f.geogroup_id)
-      const hpIndices = [...new Set(this.selectedFeatures.map(f => f.healpix_index))]
       const q = {
         constraints: [
-          { fieldId: 'geogroup_id', operation: 'IN', expression: geogroupIds, negate: false },
-          { fieldId: 'healpix_index', operation: 'IN', expression: hpIndices, negate: false }
+          { fieldId: 'geogroup_id', operation: 'IN', expression: geogroupIds, negate: false }
         ],
         projectOptions: {
           id: 1,
@@ -105,7 +103,6 @@ export default {
         limit: 500
       }
       q.constraints = that.query.constraints.concat(q.constraints)
-      q.onSubFeatures = true
       qe.query(q).then(qres => {
         that.currentIndex = 0
         if (!qres.res.length) {
