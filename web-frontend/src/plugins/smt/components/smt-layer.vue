@@ -95,7 +95,7 @@ export default {
   data: function () {
     return {
       opacitySliderValue: 0.3 * 255,
-      colorAssignedField: this.$smt.fields.find(f => f.id === this.$smt.defaultColorAssignedFieldId),
+      colorAssignedField: this.$smt.fields.find(f => f.id === this.$smt.defaultColorAssignedFieldId) || this.$smt.fields[0].id,
       colorAssignedFieldRange: [0, 1],
       query: {
         constraints: [],
