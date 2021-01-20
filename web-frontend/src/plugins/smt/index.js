@@ -55,6 +55,13 @@ export default {
     app.$store.commit('setValue', { varName: 'showLocationButton', newValue: false })
     app.$store.commit('setValue', { varName: 'showTimeButtons', newValue: false })
     app.$store.commit('setValue', { varName: 'showFPS', newValue: true })
+    app.$store.commit('setValue', { varName: 'showNightmodeButton', newValue: false })
+    app.$store.commit('setValue', { varName: 'showAzimuthalGridButton', newValue: false })
+    app.$store.commit('setValue', { varName: 'showLandscapeButton', newValue: false })
+    app.$store.commit('setValue', { varName: 'showAtmosphereButton', newValue: false })
+    app.$store.commit('setValue', { varName: 'showConstellationsArtButton', newValue: false })
+    app.$store.commit('setValue', { varName: 'showPlanetsVisibilityMenuItem', newValue: false })
+    app.$store.commit('setValue', { varName: 'showViewSettingsMenuItem', newValue: false })
 
     return qe.init().then(smtConfig => {
       const filtrexOptions = {
