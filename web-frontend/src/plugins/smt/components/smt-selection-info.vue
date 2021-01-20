@@ -102,7 +102,7 @@ export default {
           id: 1,
           properties: 1
         },
-        limit: 50
+        limit: 500
       }
       q.constraints = that.query.constraints.concat(q.constraints)
       q.onSubFeatures = true
