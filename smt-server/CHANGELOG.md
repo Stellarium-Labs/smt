@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2] - 2021-01-20
+- Split internal database in 2 tables, one is optimized for geometry query
+- Highlight currently displayed selected footprint
+- Remove unused GUI elements
+- Enable Gaia catalog and DSS images when zooming
+
 ## [0.2.1] - 2021-01-15
 - Show colors in histogram to match the sky content
 - Fix number range sort order when some values are negative
