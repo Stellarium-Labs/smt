@@ -136,7 +136,15 @@ export default {
     printConstraint: function (c) {
       if (c.expression === undefined) return '__undefined'
       if (c.field.widget === 'date_range') return this.formatDate(c.expression[0]) + ' - ' + this.formatDate(c.expression[1])
-      if (c.field.widget === 'number_range') return '' + c.expression[0] + ' - ' + c.expression[1]
+      if (c.field.widget === 'number_range') {
+        const formatVal = function (d) {
+          if (c.field.formatFuncCompiled) {
+            return c.field.formatFuncCompiled({ x: d })
+          }
+          return '' + d
+        }
+        return '' + formatVal(c.expression[0]) + ' - ' + formatVal(c.expression[1])
+      }
       return c.expression
     },
     constraintColor: function (c) {
