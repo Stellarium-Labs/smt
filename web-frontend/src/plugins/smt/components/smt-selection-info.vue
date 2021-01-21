@@ -102,16 +102,16 @@ export default {
         }]
       }
       this.geojsonObj = this.$stel.createObj('geojson')
-      this.geojsonObj.filter = function (feature) {
-        return {
-          fill: [1, 0, 0, 1],
-          stroke: [1, 1, 1, 1],
-          hidden: false,
-          blink: true
-        }
-      }
       this.geojsonObj.setData(geojson)
       this.$observingLayer.add(this.geojsonObj)
+      this.geojsonObj.filter = function (id) {
+        return {
+          fill: [1, 1, 1, 0.05],
+          stroke: [1, 1, 1, 1],
+          hidden: false,
+          blink: false
+        }
+      }
     }
   },
   watch: {
