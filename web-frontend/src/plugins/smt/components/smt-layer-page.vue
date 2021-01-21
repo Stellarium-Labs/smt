@@ -14,13 +14,15 @@
     <img :src="watermarkImage" style="position: fixed; left: 5px; bottom: 5px; opacity: 0.7;"></img>
     <smt-panel-root-toolbar></smt-panel-root-toolbar>
     <v-chip-group v-model="tab" center-active mandatory show-arrows active-class="chip-tab-active" style="margin-left: 5px; height: 38px;">
-      <v-chip v-for="name in layersList" :key="name" color="#262626" close close-icon="mdi-close" class="chip-tab-inactive" label @click:close="delLayer(name)">{{ name }}</v-chip>
+      <draggable v-model="layersList">
+        <v-chip v-for="layer in layersList" :key="layer.id" color="#262626" close draggable close-icon="mdi-close" class="chip-tab-inactive" label @click:close="delLayer(layer.id)">{{ layer.name }}</v-chip>
+      </draggable>
       <v-btn icon class="transparent" @click.stop="addLayer()" style="margin-left: 0px; margin-top: 3px;"><v-icon>mdi-plus</v-icon></v-btn>
     </v-chip-group>
     <div style="height: calc(100% - 38px - 48px);">
       <v-tabs-items v-model="tab" style="height: 100%;">
-        <v-tab-item :eager="true" v-for="(name, index) in layersList" :key="index" style="height: 100%; display: flex; flex-flow: column;">
-          <smt-layer :name="name" :current="index === tab" v-on:registerClickCb="onRegisterClickCb" v-on:unregisterClickCb="onUnregisterClickCb"></smt-layer>
+        <v-tab-item :eager="true" v-for="(layer, index) in layersList" :key="layer.id" style="height: 100%; display: flex; flex-flow: column;">
+          <smt-layer :name="layer.name" :z="index" :current="index === tab" v-on:registerClickCb="onRegisterClickCb" v-on:unregisterClickCb="onUnregisterClickCb"></smt-layer>
         </v-tab-item>
       </v-tabs-items>
     </div>
@@ -31,6 +33,7 @@
 <script>
 import SmtPanelRootToolbar from './smt-panel-root-toolbar.vue'
 import SmtLayer from './smt-layer.vue'
+import draggable from 'vuedraggable'
 
 export default {
   data: function () {
@@ -46,13 +49,13 @@ export default {
         do {
           name = 'Layer ' + this.layerNameIdx
           this.layerNameIdx++
-        } while (this.layersList.indexOf(name) !== -1)
+        } while (this.layersList.find(l => l.name === name) !== undefined)
       }
-      this.layersList.push(name)
+      this.layersList.push({ id: this.layerNameIdx, name: name })
       this.tab = this.layersList.length - 1
     },
-    delLayer: function (name) {
-      const index = this.layersList.indexOf(name)
+    delLayer: function (id) {
+      const index = this.layersList.findIndex(l => l.id === id)
       if (index !== -1) {
         this.layersList.splice(index, 1)
       }
@@ -89,7 +92,7 @@ export default {
       return false
     })
   },
-  components: { SmtPanelRootToolbar, SmtLayer }
+  components: { SmtPanelRootToolbar, SmtLayer, draggable }
 }
 </script>
 

@@ -112,7 +112,7 @@ export default {
       selectedFootprintData: []
     }
   },
-  props: ['name', 'current'],
+  props: ['name', 'current', 'z'],
   created: function () {
     console.log('Created layer: ' + this.name)
   },
@@ -465,6 +465,11 @@ export default {
     },
     current: function () {
       if (!this.current) this.unselect()
+    },
+    z: function () {
+      if (this.geojsonObj) {
+        this.geojsonObj.z = this.z
+      }
     }
   },
   computed: {
