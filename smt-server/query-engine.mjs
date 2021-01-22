@@ -227,7 +227,10 @@ export default {
       const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
       for (let j = 0; j < newSubs.length; ++j) {
         const subF = newSubs[j]
+        assert(subF.geometry)
         subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
+        subF.geogroup_id = feature.geogroup_id
+        subF.id = feature.id
         _.assign(subF, sqlValues)
       }
       subFeatures = subFeatures.concat(newSubs)
