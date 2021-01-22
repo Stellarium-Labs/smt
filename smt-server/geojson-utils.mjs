@@ -120,13 +120,13 @@ export default {
     }
     let corners = healpix.corners_nest(1 << order, pix)
     corners = corners.map(c => { return vec3TogeojsonPoint(c) })
-    for (let i = 0; i < corners.length; ++i) {
-      if (Math.abs(corners[i][1]) > 89.9999999) {
-        corners[i][0] = corners[mod(i + 1, corners.length)][0]
-        corners.splice(i, 0, [corners[mod(i - 1, corners.length)][0], corners[i][1]])
-        break
-      }
-    }
+//    for (let i = 0; i < corners.length; ++i) {
+//      if (Math.abs(corners[i][1]) > 89.9999999) {
+//        corners[i][0] = corners[mod(i + 1, corners.length)][0]
+//        corners.splice(i, 0, [corners[mod(i - 1, corners.length)][0], corners[i][1]])
+//        break
+//      }
+//    }
     corners.push(_.cloneDeep(corners[0]))
     let hppixel = turf.polygon([corners])
     this.normalizeGeoJson(hppixel)
