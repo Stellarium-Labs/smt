@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3] - 2021-01-22
+- Improve selection highlight
+- Hide unused part of Stellarium web GUI
+- Show more stars and DSO in SMT
+- Allow to re-order layers by doing drag and drop on the tab headers
+- Large footprints such as survey envelops are now properly split into healpix tiles like any other footprint.
+
 ## [0.2.2] - 2021-01-20
 - Split internal database in 2 tables, one is optimized for geometry query
 - Highlight currently displayed selected footprint
