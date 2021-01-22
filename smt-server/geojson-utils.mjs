@@ -37,22 +37,16 @@ const crossAntimeridian = function (feature) {
 }
 
 const geojsonPointToVec3 = function (p) {
-  const theta = (90 - p[1]) * D2R
-  const phi = (p[0] < 0 ? p[0] + 360 : p[0]) * D2R
-  assert((theta >= 0) && (theta <= Math.PI))
-  assert(phi >= 0 && phi <= 2 * Math.PI)
-  return healpix.ang2vec(theta, phi)
+  const lat = p[1] * D2R
+  const lon = p[0] * D2R
+  const v = [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)]
+  return v
 }
 
 const vec3TogeojsonPoint = function (v) {
-  const p = healpix.vec2ang(v)
-  let lat = 90 - p.theta * R2D
-  let lon = p.phi * R2D
-  if (lon > 180) lon -= 360
-  if (lon < -180) lon += 360
-  assert((lat >= -90) && (lat <= 90))
-  assert((lon >= -180) && (lon <= 180))
-  return [lon, lat]
+  const lat = Math.asin(v[2])
+  const lon = Math.atan2(v[1], v[0])
+  return [lon * R2D, lat * R2D]
 }
 
 const rotateGeojsonPoint = function (p, m) {
