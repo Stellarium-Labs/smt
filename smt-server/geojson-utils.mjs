@@ -179,13 +179,67 @@ export default {
   // Split the given feature in pieces on the healpix grid
   // Returns a list of features each with 'healpix_index' set to the matching
   // index.
-  splitOnHealpixGrid: function (feature, order) {
+  splitOnHealpixGrid: function (feature, order, alreadySplit) {
     const that = this
     let area = that.featureArea(feature)
-    // For large footprints, we return -1 so that it goes in the AllSky order
-    if (area * STERADIAN_TO_DEG2 > 25) {
-      feature['healpix_index'] = -1
-      return [_.cloneDeep(feature)]
+    if (area * STERADIAN_TO_DEG2 < 0.00001) return []
+    // For large footprints, we need to split the feature on quadrants
+    if (area * STERADIAN_TO_DEG2 > 500 && !alreadySplit) {
+      const allbbox = []
+      const hsides = 8
+      const vsides = hsides / 2
+      const degStep = 360 / hsides
+      for (let j = 0; j < vsides; ++j) {
+        for (let i = 0; i < hsides * 2; ++i) {
+          const bbox = [i * degStep - 180, j * degStep - 90, (i + 1) * degStep - 180, (j + 1) * degStep - 90]
+          allbbox.push(bbox)
+        }
+      }
+      let ret = {}
+      turf.flattenEach(feature, function (feature2) {
+        allbbox.forEach(function (bbox) {
+          const box = {
+            "type":"Feature",
+            "properties":{},
+            "geometry":{
+              "type":"Polygon",
+              "coordinates":[
+                [
+                  [bbox[0], bbox[1]],
+                  [bbox[2], bbox[1]],
+                  [bbox[2], bbox[3]],
+                  [bbox[0], bbox[3]],
+                  [bbox[0], bbox[1]]
+                ]
+              ]
+            }
+          }
+          let clipped = turf.intersect(feature2, box)
+          if (!clipped || turf.area(clipped) < 0.01) return
+          turf.flattenEach(clipped, function (f2) {
+            if (turf.area(f2) < 0.01) return
+            let spl = that.splitOnHealpixGrid(f2, order, true)
+            // Now that the large feature is split on the healpix grid
+            // we still need to re-combine the features falling on the same
+            // healpix pixel
+            spl.forEach(f => {
+              that.normalizeGeoJson(f)
+              if (f.healpix_index in ret) {
+                try {
+                  ret[f.healpix_index] = turf.union(ret[f.healpix_index], f)
+                  ret[f.healpix_index].healpix_index = f.healpix_index
+                } catch (err) {
+                  console.log('Error while doing union:' + err)
+                }
+              } else {
+                ret[f.healpix_index] = f
+              }
+            })
+          })
+        })
+      })
+      ret = Object.values(ret)
+      return ret
     }
     let center = turf.centroid(feature)
     assert(center)
@@ -208,8 +262,6 @@ export default {
       f.geometry = intersection.geometry
       ret.push(f)
     })
-    if (ret.length === 0) {
-    }
     return ret
   },
 
@@ -225,6 +277,7 @@ export default {
       assert(combinedFc.features.length === 1)
       const f = _.cloneDeep(feature1)
       f.geometry = combinedFc.features[0].geometry
+      assert(f.geometry)
       return f
     }
 
@@ -237,11 +290,35 @@ export default {
     let res = null
     try {
       res = turf.intersect(f1, f2)
-      if (res) this.rotateGeojsonFeature(res, rotationMats.mInv)
+      if (res) that.rotateGeojsonFeature(res, rotationMats.mInv)
     } catch (err) {
-      console.log('Error computing feature intersection: ' + err)
-      res = null
+      let ff1
+      try {
+        assert(turf.unkinkPolygon(turf.cleanCoords(f2)).features.length === 1)
+        ff1 = turf.unkinkPolygon(turf.cleanCoords(f1))
+        let arr = []
+        turf.flattenEach(ff1, function (f) {
+          if (turf.area(f) < 0.00001) return
+          const r = turf.intersect(f, f2)
+          if (r) {
+            that.rotateGeojsonFeature(r, rotationMats.mInv)
+            arr.push(r)
+          }
+        })
+        res = null
+        if (arr.length) {
+          res = arr[0]
+          for (let i = 1; i < arr.length; ++i) {
+            res = turf.union(res, arr[i])
+          }
+        }
+      } catch (err) {
+        console.log('Error computing feature intersection: ' + err)
+        res = null
+      }
     }
+    assert(res === null || res.geometry)
     return res
   }
 }
+
