@@ -107,7 +107,8 @@ export default {
   },
 
   rotateGeojsonFeature: function (feature, m) {
-    turf.coordEach(feature, p => {rotateGeojsonPoint(p, m)})
+    const sameFirstLastPoint = feature.geometry.coordinates[0][0] === feature.geometry.coordinates[0][feature.geometry.coordinates[0].length - 1]
+    turf.coordEach(feature, p => {rotateGeojsonPoint(p, m)}, sameFirstLastPoint)
   },
 
   getHealpixCornerFeature: function (order, pix) {
