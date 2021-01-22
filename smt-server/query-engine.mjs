@@ -60,7 +60,7 @@ export default {
     const smtConfig = JSON.parse(fs.readFileSync(__dirname + '/data/smtConfig.json'))
 
     // Initialize modules's attributes based on the config file
-    that.quickTestMode = smtConfig.quick_test_mode
+    that.quickTestMode = process.env.SMT_QUICK_TEST
     that.fieldsList = _.cloneDeep(smtConfig.fields)
     that.fieldsMap = {}
     for (let i in that.fieldsList) {
