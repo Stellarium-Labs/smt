@@ -136,7 +136,7 @@ static void core_set_default(void)
     obj_set_attr(&obs->obj, "latitude", 25.066667 * DD2R);
     obj_set_attr(&obs->obj, "longitude", 121.516667 * DD2R);
     obj_set_attr(&obs->obj, "elevation", 0.0);
-    obs->tt = unix_to_mjd(sys_get_unix_time());
+    obs->tt = utc2tt(unix_to_mjd(sys_get_unix_time()));
 
     // We approximate the pressure from the altitude and the sea level
     // temperature in K (See Astrophysical Quantities, C.W.Allen, 3rd edition,
@@ -148,6 +148,7 @@ static void core_set_default(void)
     core->fov = 50 * DD2R;
     core->proj = PROJ_STEREOGRAPHIC;
     core->lwmax = 5000;
+    core->clock = sys_get_unix_time();
 
     // Adjust those values to make the sky look good.
     core->star_linear_scale = 0.8;
@@ -206,7 +207,6 @@ void core_init(double win_w, double win_h, double pixel_scale)
         core_set_default();
         return;
     }
-    profile_init();
     texture_set_load_callback(NULL, texture_load_function);
     snprintf(cache_dir, sizeof(cache_dir), "%s/%s",
              sys_get_user_dir(), ".cache");
@@ -241,7 +241,6 @@ void core_release(void)
     DL_FOREACH(core->obj.children, module) {
         if (module->klass->del) module->klass->del(module);
     }
-    profile_release();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -275,13 +274,18 @@ static void update_refraction(double dt, bool on)
 }
 
 EMSCRIPTEN_KEEPALIVE
-int core_update(double dt)
+int core_update(void)
 {
     bool atm_visible;
-    double lwmax;
+    double lwmax, now, dt;
     int r;
     obj_t *atm, *module;
     task_t *task, *task_tmp;
+
+    now = sys_get_unix_time();
+    dt = now - core->clock;
+    dt = max(dt, 0.001); // Prevent bug in case the clock goes backward.
+    core->clock = now;
 
     atm = core_get_module("atmosphere");
     assert(atm);
@@ -530,7 +534,6 @@ static void render_proj_markers(const painter_t *painter_)
 EMSCRIPTEN_KEEPALIVE
 int core_render(double win_w, double win_h, double pixel_scale)
 {
-    PROFILE(core_render, 0);
     obj_t *module;
     projection_t proj;
     double max_vmag, hints_vmag;
@@ -696,10 +699,13 @@ void core_on_zoom(double k, double x, double y)
 {
     double fov, pos_start[3], pos_end[3];
     double sal, saz, dal, daz;
+    projection_t proj;
 
+    core_get_proj(&proj);
     win_to_observed(x, y, pos_start);
     obj_get_attr(&core->obj, "fov", &fov);
     fov /= k;
+    fov = clamp(fov, CORE_MIN_FOV, proj.max_ui_fov);
     obj_set_attr(&core->obj, "fov", fov);
     win_to_observed(x, y, pos_end);
 
@@ -880,25 +886,28 @@ void core_report_luminance_in_fov(double lum, bool fast_adaptation)
 EMSCRIPTEN_KEEPALIVE
 void core_lookat(const double *pos, double duration)
 {
-    double az, al;
+    double az, al, now;
+    typeof(core->target) *anim = &core->target;
 
     // Direct lookat.
     if (duration == 0.0) {
         eraC2s(pos, &core->observer->yaw, &core->observer->pitch);
+        memset(anim, 0, sizeof(*anim));
         return;
     }
 
-    quat_set_identity(core->target.src_q);
-    quat_rz(core->observer->yaw, core->target.src_q, core->target.src_q);
-    quat_ry(-core->observer->pitch, core->target.src_q, core->target.src_q);
+    now = sys_get_unix_time();
+    quat_set_identity(anim->src_q);
+    quat_rz(core->observer->yaw, anim->src_q, anim->src_q);
+    quat_ry(-core->observer->pitch, anim->src_q, anim->src_q);
 
     eraC2s((double*)pos, &az, &al);
-    quat_set_identity(core->target.dst_q);
-    quat_rz(az, core->target.dst_q, core->target.dst_q);
-    quat_ry(-al, core->target.dst_q, core->target.dst_q);
+    quat_set_identity(anim->dst_q);
+    quat_rz(az, anim->dst_q, anim->dst_q);
+    quat_ry(-al, anim->dst_q, anim->dst_q);
 
-    core->target.duration = duration;
-    core->target.t = 0.0;
+    anim->src_time = now;
+    anim->dst_time = now + duration;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -916,10 +925,13 @@ void core_point_and_lock(obj_t *target, double duration)
 EMSCRIPTEN_KEEPALIVE
 void core_zoomto(double fov, double duration)
 {
+    double s, now;
     projection_t proj;
+
+    now = sys_get_unix_time();
     core_get_proj(&proj);
-    if (fov > proj.max_fov)
-        fov = proj.max_fov;
+    if (fov > proj.max_ui_fov)
+        fov = proj.max_ui_fov;
 
     // Direct lookat.
     if (duration == 0.0) {
@@ -928,7 +940,7 @@ void core_zoomto(double fov, double duration)
     }
 
     typeof(core->fov_animation)* anim = &core->fov_animation;
-    if (anim->t < 1 && anim->t > 0) {
+    if (now > anim->src_time && now <= anim->dst_time) {
         // We request a new animation while another one is still on going
         if (fov == anim->dst_fov) {
             // Same animation is going on, just finish it
@@ -937,41 +949,37 @@ void core_zoomto(double fov, double duration)
         // We are looking for a new set of zoom parameters so that:
         // - we preserve the current zoom level
         // - the remaining animation time is equal to the new duration
-        double t2 = (anim->t * anim->duration) / (anim->t * anim->duration +
-                                                  duration);
-        assert(t2 >= 0 && t2 <= 1);
-        double st2 = smoothstep(0, 1, t2);
-        double src2 = (core->fov - fov * st2) / (1.0 - st2);
-        anim->src_fov = src2;
+        s = smoothstep(anim->src_time, now + duration, now);
+        anim->dst_time = now + duration;
         anim->dst_fov = fov;
-        anim->duration = anim->t * anim->duration + duration;
-        anim->t = t2;
+        anim->src_fov = (core->fov - s * fov) / (1 - s);
         return;
     }
 
     anim->src_fov = core->fov;
     anim->dst_fov = fov;
-    anim->duration = duration;
-    anim->t = 0.0;
+    anim->src_time = now;
+    anim->dst_time = now + duration;
 }
 
 EMSCRIPTEN_KEEPALIVE
 void core_set_time(double utc, double duration)
 {
-    double tt, speed;
+    double tt, speed, now;
     typeof(core->time_animation) *anim = &core->time_animation;
 
     tt = utc2tt(utc);
-    anim->duration = 0;
     if (duration == 0.0) {
         obj_set_attr(&core->observer->obj, "tt", tt);
+        memset(anim, 0, sizeof(*anim));
         return;
     }
+    now = sys_get_unix_time();
     anim->src_tt = core->observer->tt;
     anim->dst_tt = tt;
     anim->dst_utc = utc;
-    anim->duration = duration;
-    anim->t = 0;
+    anim->src_time = now;
+    anim->dst_time = now + duration;
 
     // Determine the animation mode (normal or 'smart').  If the animation
     // moves at more than a few days per seconds, use the 'smart' mode.

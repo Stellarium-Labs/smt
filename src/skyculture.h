@@ -26,13 +26,28 @@
 #include "uthash.h"
 
 /*
+ * Weight used for displaying constellation lines.
+ */
+enum {
+    LINE_WEIGHT_NORMAL    = 0,
+    LINE_WEIGHT_THIN      = 1,
+    LINE_WEIGHT_BOLD      = 2
+};
+
+typedef struct constellation_line
+{
+    int hip[2];
+    uint8_t line_weight;
+} constellation_line_t;
+
+/*
  * Type: constellation_infos_t
  * Information about a given constellation.
  */
 typedef struct constellation_infos
 {
     char id[128];
-    int  lines[64][2]; // star HIP number.
+    constellation_line_t lines[64];
     int  nb_lines;
     double edges[64][2][2]; // Ra/dec B1875 boundaries polygon.
     int nb_edges;

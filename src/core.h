@@ -98,6 +98,7 @@ struct core
     double          win_pixels_scale;
     obj_t           *selection;
 
+    double          clock; // Real time clock (sec, unix time).
     fps_t           fps; // FPS counter.
 
     // Number of clicks so far.  This is just so that we can wait for clicks
@@ -120,25 +121,25 @@ struct core
         obj_t       *lock;    // Optional obj we lock to.
         double      src_q[4]; // Initial pos quaternion.
         double      dst_q[4]; // Destination pos quaternion.
-        double      t;        // Goes from 0 to 1 as we move.
-        double      duration; // Animation duration in sec.
+        double      src_time;   // In real clock time.
+        double      dst_time;   // In real clock time.
         // Set to true if the move is toward newly locked object.
         bool        move_to_lock;
     } target;
 
     struct {
-        double      t;        // Goes from 0 to 1 as we move.
-        double      duration; // Animation duration in sec.
         double      src_fov;  // Initial fov.
         double      dst_fov;  // Destination fov.
+        double      src_time; // In real clock time.
+        double      dst_time; // In real clock time.
     } fov_animation;
 
     struct {
-        double      t;        // Goes from 0 to 1.
-        double      duration; // Animation duration in sec.
         double      src_tt;
         double      dst_tt;
         double      dst_utc;
+        double      src_time;  // In real clock time.
+        double      dst_time;  // In real clock time.
         int         mode;
     } time_animation;
 
@@ -199,11 +200,8 @@ void core_release(void);
 /*
  * Function: core_update
  * Update the core and all the modules
- *
- * Parameters:
- *   dt     - Time increment from last frame (sec).
  */
-int core_update(double dt);
+int core_update(void);
 
 /*
  * Function: core_update_fov

@@ -128,7 +128,7 @@ static struct {
         .name       = "Ecliptic",
         .id         = "ecliptic",
         .color      = 0xb33333ff,
-        .frame      = FRAME_ICRF, // XXX: probably need to change that.
+        .frame      = FRAME_ECLIPTIC,
         .format     = 'n',
         .grid       = false,
     },
@@ -237,7 +237,6 @@ static int lines_update(obj_t *obj, double dt)
 
 static int lines_render(const obj_t *obj, const painter_t *painter)
 {
-    PROFILE(lines_render, 0);
     obj_t *line;
     MODULE_ITER(obj, line, "line")
         line->klass->render(line, painter);
@@ -731,9 +730,6 @@ static int line_render(const obj_t *obj, const painter_t *painter_)
     painter_t painter = *painter_;
 
     // XXX: probably need to use enum id for the different lines/grids.
-    if (strcmp(line->obj.id, "ecliptic") == 0) {
-        mat3_copy(core->observer->re2i, rot);
-    }
     if (strcmp(line->obj.id, "meridian") == 0) {
         mat3_rx(M_PI / 2, rot, rot);
     }
