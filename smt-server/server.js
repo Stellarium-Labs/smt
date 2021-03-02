@@ -111,7 +111,7 @@ const getSmtServerSourceCodeHash = async function () {
   return extraVersionHash
 }
 
-const initServer = async function () {
+const initServer = async function (dbFileName) {
   const extraVersionHash = await getSmtServerSourceCodeHash()
   const ret = await syncGitData(SMT_SERVER_INFO.dataGitServer, SMT_SERVER_INFO.dataGitBranch)
   SMT_SERVER_INFO.dataGitSha1 = ret.dataGitSha1
@@ -129,7 +129,6 @@ const initServer = async function () {
   smtConfig = JSON.parse(fs.readFileSync(__dirname + '/data/smtConfig.json'))
 
   // Check if we can preserve the previous DB to avoid re-loading the whole DB
-  const dbFileName = __dirname + '/qe.db'
   let reloadGeojson = true
   const dbAlreadyExists = fs.existsSync(dbFileName)
   if (dbAlreadyExists) {
@@ -146,7 +145,6 @@ const initServer = async function () {
       fs.unlinkSync(dbFileName)
     }
   }
-  qe.init()
 
   // And start listening to connection while the DB is being filled
   app.listen(port, () => {
@@ -155,22 +153,20 @@ const initServer = async function () {
 
   if (reloadGeojson) {
     console.log('Data or code has changed since last start: reload geojson')
-
-    const fetchAndIngest = async function (fn) {
-      const data = await fsp.readFile(__dirname + '/data/' + fn)
-      await qe.ingestGeoJson(JSON.parse(data))
-    }
-    const allPromise = smtConfig.sources.map(url => fetchAndIngest(url))
-    return Promise.all(allPromise).then(_ => {
-      console.log('Loading finished')
-      fs.writeFileSync(dbFileName + '-HashKey.txt', SMT_SERVER_INFO.baseHashKey);
-    })
+    qe.generateDb(__dirname + '/data/', dbFileName)
+    console.log('Loading finished')
+    fs.writeFileSync(dbFileName + '-HashKey.txt', SMT_SERVER_INFO.baseHashKey)
   } else {
     console.log('No data/code change since last start: reload previous DB')
   }
 }
 
-initServer()
+const dbFileName = __dirname + '/qe.db'
+// Re-open the previous DB if nothing changed, or create and ingest everything
+await initServer(dbFileName)
+
+// Initialize the read-only engine
+qe.init(dbFileName)
 
 app.get('/api/v1/smtServerInfo', (req, res) => {
   res.send(SMT_SERVER_INFO)

@@ -22,14 +22,24 @@ import os from 'os'
 const HEALPIX_ORDER = 5
 const __dirname = process.cwd()
 
+const fId2SqlId = function (fieldId) {
+  return fieldId.replace(/\./g, '_')
+}
+
+const fType2SqlType = function (fieldType) {
+  if (fieldType === 'string') return 'TEXT'
+  if (fieldType === 'date') return 'INT' // Dates are converted to unix time stamp
+  if (fieldType === 'number') return 'NUMERIC'
+  return 'JSON'
+}
+
 export default {
 
   // All these variable are initialized by the init() function
   fieldsList: undefined,
   fieldsMap: undefined,
-  sqlFields: undefined,
-  quickTestMode: undefined,
   db: undefined,
+  dbFileName: undefined,
 
   // Internal counter used to assign IDs
   fcounter: 0,
@@ -42,25 +52,15 @@ export default {
     }
   },
 
-  fId2AlaSql: function (fieldId) {
-    return fieldId.replace(/\./g, '_')
-  },
-
-  fType2AlaSql: function (fieldType) {
-    if (fieldType === 'string') return 'TEXT'
-    if (fieldType === 'date') return 'INT' // Dates are converted to unix time stamp
-    if (fieldType === 'number') return 'NUMERIC'
-    return 'JSON'
-  },
-
-  init: function () {
+  init: function (dbFileName) {
     let that = this
-
-    const dbFileName = __dirname + '/qe.db'
-    const smtConfig = JSON.parse(fs.readFileSync(__dirname + '/data/smtConfig.json'))
+    assert(fs.existsSync(dbFileName))
+    that.dbFileName = dbFileName
+    console.log('Opening existing Data Base (read only): ' + dbFileName)
+    const db = new Database(dbFileName, { readonly: true });
+    const smtConfig = JSON.parse(db.prepare('SELECT data from smtConfig').get().data)
 
     // Initialize modules's attributes based on the config file
-    that.quickTestMode = process.env.SMT_QUICK_TEST
     that.fieldsList = _.cloneDeep(smtConfig.fields)
     that.fieldsMap = {}
     for (let i in that.fieldsList) {
@@ -77,16 +77,6 @@ export default {
     that.fieldsMap['id'] = { type: 'string' }
     that.fieldsMap['healpix_index'] = { type: 'number' }
     that.fieldsMap['geogroup_id'] = { type: 'string' }
-
-    that.sqlFields = that.fieldsList.map(f => that.fId2AlaSql(f.id))
-    let sqlFieldsAndTypes = that.fieldsList.map(f => that.fId2AlaSql(f.id) + ' ' + that.fType2AlaSql(f.type)).join(', ')
-
-    // Open or create the SQLite DB
-    let dbAlreadyExists = fs.existsSync(dbFileName)
-    if (dbAlreadyExists) console.log('Opening existing Data Base (read only): ' + dbFileName)
-    else console.log('Create new Data Base: ' + dbFileName)
-
-    const db = new Database(dbFileName, { readonly: dbAlreadyExists });
 
     // Add a custom aggregation operator for the chip tags
     db.aggregate('VALUES_AND_COUNT', {
@@ -152,38 +142,99 @@ export default {
       }
     })
 
-    if (!dbAlreadyExists) {
-      db.prepare('CREATE TABLE features (id TEXT, geometry TEXT, geogroup_id TEXT, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
-      db.prepare('CREATE INDEX idx_id ON features(id)').run()
-      db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
-
-      db.prepare('CREATE TABLE subfeatures (id TEXT, geometry TEXT, healpix_index INT, geogroup_id TEXT, ' + sqlFieldsAndTypes + ')').run()
-      db.prepare('CREATE INDEX idxsub_id ON subfeatures(id)').run()
-      db.prepare('CREATE INDEX idxsub_geogroup_id ON subfeatures(geogroup_id)').run()
-      db.prepare('CREATE INDEX idxsub_healpix_index ON subfeatures(healpix_index)').run()
-
-      // Create an index on each field
-      for (let i in that.sqlFields) {
-        const field = that.sqlFields[i]
-        db.prepare('CREATE INDEX idx_' + i + ' ON features(' + field + ')').run()
-        db.prepare('CREATE INDEX idxsub_' + i + ' ON subfeatures(' + field + ')').run()
-      }
-    }
-
     that.db = db
 
     // Initialize the thread pool used to run async functions
     if (workerpool.isMainThread)
-      that.initAsync()
+      this.pool = workerpool.pool('./worker.mjs')
   },
 
-  ingestGeoJson: function (jsonData) {
-    let that = this
+  // A worker pool
+  pool: undefined,
 
-    if (that.quickTestMode) {
+  queryAsync: function (...parameters) {
+    return this.pool.exec('query', [this.dbFileName].concat(parameters))
+  },
+
+  getHipsTileAsync: function (...parameters) {
+    return this.pool.exec('getHipsTile', [this.dbFileName].concat(parameters))
+  },
+
+  generateDb: function (dataDir, dbFileName) {
+    const that = this
+    // Create the DB file and ingest everything, but dont intialize this object
+    // at all, another call to init() is necessary for this.
+    const dbAlreadyExists = fs.existsSync(dbFileName)
+    if (dbAlreadyExists) {
+      // supress previous DB
+      console.log('Suppress existind DB at: ' + dbFileName)
+      fs.unlinkSync(dbFileName)
+    }
+    console.log('Create new Data Base: ' + dbFileName)
+    const db = new Database(dbFileName)
+    const smtConfig = JSON.parse(fs.readFileSync(dataDir + '/smtConfig.json'))
+
+    // Initialize modules's attributes based on the config file
+    const fieldsList = _.cloneDeep(smtConfig.fields)
+    const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
+
+    // Initialize DB structure
+
+    // Save config file inside the DB
+    db.prepare('CREATE TABLE smtconfig (data TEXT)').run()
+    db.prepare('INSERT INTO smtconfig (data) VALUES (?)').run(JSON.stringify(smtConfig))
+
+    const sqlFieldsAndTypes = fieldsList.map(f => fId2SqlId(f.id) + ' ' + fType2SqlType(f.type)).join(', ')
+    db.prepare('CREATE TABLE features (id TEXT, geometry TEXT, geogroup_id TEXT, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE INDEX idx_id ON features(id)').run()
+    db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
+
+    db.prepare('CREATE TABLE subfeatures (id TEXT, geometry TEXT, healpix_index INT, geogroup_id TEXT, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE INDEX idxsub_id ON subfeatures(id)').run()
+    db.prepare('CREATE INDEX idxsub_geogroup_id ON subfeatures(geogroup_id)').run()
+    db.prepare('CREATE INDEX idxsub_healpix_index ON subfeatures(healpix_index)').run()
+
+    // Create an index on each field
+    for (let i in sqlFields) {
+      const field = sqlFields[i]
+      db.prepare('CREATE INDEX idx_' + i + ' ON features(' + field + ')').run()
+      db.prepare('CREATE INDEX idxsub_' + i + ' ON subfeatures(' + field + ')').run()
+    }
+    db.close()
+
+    // Ingest all geojson files listed in the smtConfig
+    smtConfig.sources.map(url => that.ingestGeoJson(dbFileName, dataDir + '/' + url))
+  },
+
+  // Ingest geojson file fileName into the database at dbFileName
+  ingestGeoJson: function (dbFileName, fileName) {
+    const that = this
+    const jsonData = JSON.parse(fs.readFileSync(fileName))
+    const dbAlreadyExists = fs.existsSync(dbFileName)
+    assert(dbAlreadyExists)
+
+    const db = new Database(dbFileName)
+
+    const smtConfig = JSON.parse(db.prepare('SELECT data from smtConfig').get().data)
+    const fieldsList = _.cloneDeep(smtConfig.fields)
+    const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
+
+    // Compile filtrex expressions used for creating generated fields
+    for (let i in fieldsList) {
+      if (fieldsList[i].computed) {
+        const options = {
+          extraFunctions: { date2unix: function (dstr) { return new Date(dstr).getTime() } },
+          customProp: (path, unused, obj) => _.get(obj, path, undefined)
+        }
+        fieldsList[i].computed_compiled = filtrex.compileExpression(fieldsList[i].computed, options)
+      }
+    }
+
+    const quickTestMode = process.env.SMT_QUICK_TEST
+    if (quickTestMode) {
       jsonData.features = jsonData.features.slice(0, 100)
     }
-    console.log('Loading ' + jsonData.features.length + ' features' + (that.quickTestMode ? ' (quick test mode)' : ''))
+    console.log('Loading ' + jsonData.features.length + ' features' + (quickTestMode ? ' (quick test mode)' : ''))
     geo_utils.normalizeGeoJson(jsonData)
 
     // Insert all data
@@ -198,8 +249,8 @@ export default {
 
       // Prepare all values to insert in SQL DB
       const sqlValues = {}
-      for (let i = 0; i < that.fieldsList.length; ++i) {
-        const field = that.fieldsList[i]
+      for (let i = 0; i < fieldsList.length; ++i) {
+        const field = fieldsList[i]
         let d
         if (field.computed_compiled) {
           d = field.computed_compiled(feature.properties)
@@ -210,7 +261,7 @@ export default {
             d = new Date(d).getTime()
           }
         }
-        sqlValues[that.sqlFields[i]] = d
+        sqlValues[sqlFields[i]] = d
       }
 
       const f = {
@@ -237,19 +288,20 @@ export default {
       feature.properties = origProperties
     })
 
-    const insert = that.db.prepare('INSERT INTO features VALUES (@id, @geometry, @geogroup_id, @properties, ' + that.sqlFields.map(f => '@' + f).join(',') + ')')
-    const insertMany = that.db.transaction((features) => {
+    const insert = db.prepare('INSERT INTO features VALUES (@id, @geometry, @geogroup_id, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+    const insertMany = db.transaction((features) => {
       for (const feature of features)
         insert.run(feature)
     })
     insertMany(allFeatures)
 
-    const insertSub = that.db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @healpix_index, @geogroup_id, ' + that.sqlFields.map(f => '@' + f).join(',') + ')')
-    const insertManySub = that.db.transaction((features) => {
+    const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @healpix_index, @geogroup_id, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+    const insertManySub = db.transaction((features) => {
       for (const feature of features)
         insertSub.run(feature)
     })
     insertManySub(subFeatures)
+    db.close()
   },
 
   // Construct the SQL WHERE clause matching the given constraints
@@ -272,7 +324,7 @@ export default {
 
     // Convert one contraint to a SQL string
     let c2sql = function (c) {
-      const fid = that.fId2AlaSql(c.fieldId)
+      const fid = fId2SqlId(c.fieldId)
       if (c.operation === 'STRING_EQUAL') {
         return fid + ' = \'' + c.expression + '\''
       } else if (c.operation === 'INT_EQUAL') {
@@ -330,7 +382,7 @@ export default {
     // Construct the SQL SELECT clause matching the given aggregate options
     let selectClause = 'SELECT '
     if (q.projectOptions) {
-      selectClause += Object.keys(q.projectOptions).map(k => that.fId2AlaSql(k)).join(', ')
+      selectClause += Object.keys(q.projectOptions).map(k => fId2SqlId(k)).join(', ')
     }
 
     const fromClause = ' FROM features'
@@ -344,13 +396,13 @@ export default {
         if (agOpt.operation === 'COUNT') {
           selectClause += 'COUNT(*) as ' + agOpt.out
         } else if (agOpt.operation === 'VALUES_AND_COUNT') {
-          selectClause += 'VALUES_AND_COUNT(' + that.fId2AlaSql(agOpt.fieldId) + ') as ' + agOpt.out
+          selectClause += 'VALUES_AND_COUNT(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
         } else if (agOpt.operation === 'MIN_MAX') {
-          selectClause += 'MIN_MAX(' + that.fId2AlaSql(agOpt.fieldId) + ') as ' + agOpt.out
+          selectClause += 'MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           // Special case, do custom queries and return
           console.assert(q.aggregationOptions.length === 1)
-          let fid = that.fId2AlaSql(agOpt.fieldId)
+          let fid = fId2SqlId(agOpt.fieldId)
           let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NULL' : whereClause + ' AND ' + fid + ' IS NULL'
           let req = 'SELECT COUNT(*) AS c ' + fromClause + wc
           let res = that.db.prepare(req).get()
@@ -436,7 +488,7 @@ export default {
         } else if (agOpt.operation === 'NUMBER_HISTOGRAM') {
           // Special case, do custom queries and return
           console.assert(q.aggregationOptions.length === 1)
-          let fid = that.fId2AlaSql(agOpt.fieldId)
+          let fid = fId2SqlId(agOpt.fieldId)
           let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NULL' : whereClause + ' AND ' + fid + ' IS NULL'
           let req = 'SELECT COUNT(*) AS c ' + fromClause + wc
           let res = that.db.prepare(req).get()
@@ -534,8 +586,8 @@ export default {
 
     // Construct the SQL SELECT clause matching the given aggregate options
     let selectClause = 'SELECT '
-    selectClause += this.fieldsList.filter(f => f.widget !== 'tags').map(f => that.fId2AlaSql(f.id)).map(k => 'MIN_MAX(' + k + ') as ' + k).join(', ')
-    selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => that.fId2AlaSql(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ') as ' + k).join(', ')
+    selectClause += this.fieldsList.filter(f => f.widget !== 'tags').map(f => fId2SqlId(f.id)).map(k => 'MIN_MAX(' + k + ') as ' + k).join(', ')
+    selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => fId2SqlId(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ') as ' + k).join(', ')
     selectClause += ', COUNT(*) as c, healpix_index ' + (LOD_LEVEL === 0 ? '' : ', geogroup_id, geometry ') + 'FROM subfeatures '
     let sqlStatement = selectClause + whereClause
     if (tileId !== -1) {
@@ -570,20 +622,5 @@ export default {
       geojson.features.push(feature)
     }
     return geojson.features.length ? geojson : undefined
-  },
-
-  // A worker pool
-  pool: undefined,
-
-  initAsync: function () {
-    this.pool = workerpool.pool('./worker.mjs')
-  },
-
-  queryAsync: function (...parameters) {
-    return this.pool.exec('query', parameters)
-  },
-
-  getHipsTileAsync: function (...parameters) {
-    return this.pool.exec('getHipsTile', parameters)
   }
 }
