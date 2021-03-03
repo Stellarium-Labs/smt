@@ -402,9 +402,9 @@ export default {
           selectClause += 'MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           const fid = fId2SqlId(agOpt.fieldId)
-          let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
-          let req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
-          let res = that.db.prepare(req).get()
+          const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
+          const req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
+          const res = that.db.prepare(req).get()
           postProcessSQLiteResult(res)
           let start = new Date(res.dmin)
           start.setUTCHours(0, 0, 0, 0)
@@ -432,7 +432,7 @@ export default {
             stop.setUTCFullYear(stop.getUTCFullYear(), 11, 31)
           }
 
-          selectClause += 'VALUES_AND_COUNT(' + 'STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') as ' + agOpt.out
+          selectClause += 'VALUES_AND_COUNT(' + 'STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') AS ' + agOpt.out
 
           agOpt.postProcessData = {
             min: start,
@@ -442,61 +442,28 @@ export default {
           }
 
         } else if (agOpt.operation === 'NUMBER_HISTOGRAM') {
-          // Special case, do custom queries, works only with 'GROUP_ALL'
-          console.assert(q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_ALL')
-          let fid = fId2SqlId(agOpt.fieldId)
-          let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NULL' : whereClause + ' AND ' + fid + ' IS NULL'
-          let req = 'SELECT COUNT(*) AS c ' + fromClause + wc
-          let res = that.db.prepare(req).get()
-          const null_count = res.c
-          wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
-          req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
-          res = that.db.prepare(req).get()
+          const fid = fId2SqlId(agOpt.fieldId)
+          const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
+          const req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
+          const res = that.db.prepare(req).get()
           postProcessSQLiteResult(res)
+          let step = 1
           if (res.dmin === res.dmax) {
             if (res.dmin === null) res.dmin = undefined
             if (res.dmax === null) res.dmax = undefined
-            // No results
-            let data = {
-              noval: null_count,
-              min: res.dmin,
-              max: res.dmax,
-              step: undefined,
-              table: [['Value', 'Count']]
-            }
-            let retd = {}
-            retd[agOpt.out] = data
-            return { q: q, res: [retd] }
+          } else {
+            step = (res.dmax - res.dmin) / 10
           }
-          let step = (res.dmax - res.dmin) / 10
 
-          let sqlQ = 'SELECT COUNT(*) AS c, ROUND((' + fid + ' - ' + res.dmin + ') / ' + step + ') * ' + step + ' + ' + res.dmin + ' AS d ' + fromClause + wc + ' GROUP BY ROUND((' + fid + ' - ' + res.dmin + ') / ' + step + ')'
-          const res2 = that.db.prepare(sqlQ).all()
-          let data = {
-            noval: null_count,
+          const qmin = res.dmin !== undefined ? res.dmin : 0
+          selectClause += 'VALUES_AND_COUNT(' + 'ROUND((' + fid + ' - ' + qmin + ') / ' + step + ') * ' + step + ' + ' + qmin + ') AS ' + agOpt.out
+          agOpt.postProcessData = {
+            noval: 0,
             min: res.dmin,
             max: res.dmax,
             step: step,
             table: [['Value', 'Count']]
           }
-
-          let tmpTable = {}
-          // Prefill the table to make sure that all steps do have a value
-          for (let d = res.dmin; d < res.dmax; d += step) {
-            tmpTable['' + d] = 0
-          }
-          for (let j in res2) {
-            postProcessSQLiteResult(res2[j])
-            tmpTable['' + res2[j].d] = res2[j].c
-          }
-          let keys = Object.keys(tmpTable)
-          keys.sort((a, b) => parseFloat(a) - parseFloat(b))
-          keys.forEach(function (key) {
-            data.table.push([key, tmpTable[key]])
-          })
-          let retd = {}
-          retd[agOpt.out] = data
-          return { q: q, res: [retd] }
         } else {
           throw new Error('Unsupported aggregation operation: ' + agOpt.operation)
         }
@@ -537,6 +504,31 @@ export default {
           }
           Object.keys(tmpTable).forEach(function (key) {
             data.table.push([key, tmpTable[key]])
+          })
+          line[agOpt.out] = data
+        } else if (agOpt.operation === 'NUMBER_HISTOGRAM') {
+          const start = agOpt.postProcessData.min
+          const stop = agOpt.postProcessData.max
+          const step = agOpt.postProcessData.step
+          let tmpTable = {}
+          // Prefill the table to make sure that all steps do have a value
+          for (let d = start; d < stop; d += step) {
+            tmpTable['' + d] = 0
+          }
+          let data = _.cloneDeep(agOpt.postProcessData)
+          let r = line[agOpt.out]
+          for (let j in r) {
+            if (j === '__undefined')
+              data.noval = r[j]
+            else
+              tmpTable[j] = r[j]
+          }
+          Object.keys(tmpTable).forEach(function (key) {
+            data.table.push([key, tmpTable[key]])
+          })
+          data.table.sort(function (a, b) {
+            if (a[0] === 'Value') return -1
+            return parseFloat(a[0]) - parseFloat(b[0])
           })
           line[agOpt.out] = data
         }
