@@ -446,6 +446,7 @@ export default {
             start.setUTCDate(1)
             stop.setUTCMonth(stop.getUTCMonth() + 1, 0)
           } else if (step === '%Y') {
+            start.setUTCDate(1)
             start.setUTCMonth(0)
             stop.setUTCFullYear(stop.getUTCFullYear(), 11, 31)
           }
