@@ -388,10 +388,11 @@ export default {
     const fromClause = ' FROM features'
 
     if (q.aggregationOptions) {
+      assert(!q.projectOptions)
       // We can't do much more than group all using SQL language
       console.assert(q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_ALL')
       for (let i in q.aggregationOptions) {
-        let agOpt = q.aggregationOptions[i]
+        const agOpt = q.aggregationOptions[i]
         console.assert(agOpt.out)
         if (agOpt.operation === 'COUNT') {
           selectClause += 'COUNT(*) as ' + agOpt.out
@@ -400,8 +401,8 @@ export default {
         } else if (agOpt.operation === 'MIN_MAX') {
           selectClause += 'MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
-          // Special case, do custom queries and return
-          console.assert(q.aggregationOptions.length === 1)
+          // Special case, do custom queries, works only with 'GROUP_ALL'
+          console.assert(q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_ALL')
           let fid = fId2SqlId(agOpt.fieldId)
           let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NULL' : whereClause + ' AND ' + fid + ' IS NULL'
           let req = 'SELECT COUNT(*) AS c ' + fromClause + wc
@@ -486,8 +487,8 @@ export default {
           retd[agOpt.out] = data
           return { q: q, res: [retd] }
         } else if (agOpt.operation === 'NUMBER_HISTOGRAM') {
-          // Special case, do custom queries and return
-          console.assert(q.aggregationOptions.length === 1)
+          // Special case, do custom queries, works only with 'GROUP_ALL'
+          console.assert(q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_ALL')
           let fid = fId2SqlId(agOpt.fieldId)
           let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NULL' : whereClause + ' AND ' + fid + ' IS NULL'
           let req = 'SELECT COUNT(*) AS c ' + fromClause + wc
@@ -547,7 +548,7 @@ export default {
       }
     }
 
-    let sqlStatement = selectClause + fromClause + whereClause
+    const sqlStatement = selectClause + fromClause + whereClause
     const res = that.db.prepare(sqlStatement).all()
     for (let i in res) {
       postProcessSQLiteResult(res[i])
