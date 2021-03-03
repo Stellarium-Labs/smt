@@ -33,6 +33,14 @@ const fType2SqlType = function (fieldType) {
   return 'JSON'
 }
 
+const postProcessSQLiteResult = function (res)  {
+  for (const i in res) {
+    const item = res[i]
+    if (typeof item === 'string' && item.startsWith('__JSON'))
+      res[i] = JSON.parse(item.substring(6))
+  }
+}
+
 export default {
 
   // All these variable are initialized by the init() function
@@ -43,14 +51,6 @@ export default {
 
   // Internal counter used to assign IDs
   fcounter: 0,
-
-  postProcessSQLiteResult: function (res)  {
-    for (const i in res) {
-      const item = res[i]
-      if (typeof item === 'string' && item.startsWith('__JSON'))
-        res[i] = JSON.parse(item.substring(6))
-    }
-  },
 
   init: function (dbFileName) {
     let that = this
@@ -410,7 +410,7 @@ export default {
           wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
           req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
           res = that.db.prepare(req).get()
-          that.postProcessSQLiteResult(res)
+          postProcessSQLiteResult(res)
           if (!res.dmin || !res.dmax) {
             // No results
             let data = {
@@ -476,7 +476,7 @@ export default {
             }
           }
           for (let j in res2) {
-            that.postProcessSQLiteResult(res2[j])
+            postProcessSQLiteResult(res2[j])
             tmpTable[res2[j].d] = res2[j].c
           }
           Object.keys(tmpTable).forEach(function (key) {
@@ -496,7 +496,7 @@ export default {
           wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
           req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
           res = that.db.prepare(req).get()
-          that.postProcessSQLiteResult(res)
+          postProcessSQLiteResult(res)
           if (res.dmin === res.dmax) {
             if (res.dmin === null) res.dmin = undefined
             if (res.dmax === null) res.dmax = undefined
@@ -530,7 +530,7 @@ export default {
             tmpTable['' + d] = 0
           }
           for (let j in res2) {
-            that.postProcessSQLiteResult(res2[j])
+            postProcessSQLiteResult(res2[j])
             tmpTable['' + res2[j].d] = res2[j].c
           }
           let keys = Object.keys(tmpTable)
@@ -550,7 +550,7 @@ export default {
     let sqlStatement = selectClause + fromClause + whereClause
     const res = that.db.prepare(sqlStatement).all()
     for (let i in res) {
-      that.postProcessSQLiteResult(res[i])
+      postProcessSQLiteResult(res[i])
     }
     return { q: q, res: res }
   },
@@ -606,7 +606,7 @@ export default {
       features: []
     }
     for (const item of res) {
-      that.postProcessSQLiteResult(item)
+      postProcessSQLiteResult(item)
       const feature = {
         geometry: LOD_LEVEL === 0 ? geo_utils.getHealpixCornerFeature(HEALPIX_ORDER, item.healpix_index).geometry : item.geometry,
         type: 'Feature',

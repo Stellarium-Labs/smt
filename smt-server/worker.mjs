@@ -13,12 +13,11 @@ import workerpool from 'workerpool'
 import qe from './query-engine.mjs'
 
 console.log('Init worker')
-// The DB used to initialize the engine. This needs to be called
-let dbFileName
-function lasyInit(_dbFileName) {
-  if (dbFileName) return
-  qe.init(_dbFileName)
-  dbFileName = _dbFileName
+
+// The DB used to initialize the engine.
+function lasyInit(dbFileName) {
+  if (qe.dbFileName) return
+  qe.init(dbFileName)
 }
 
 // Create a worker and register public functions
