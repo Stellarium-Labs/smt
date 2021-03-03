@@ -51,7 +51,7 @@ export default {
     app.$stel.core.observer.yaw = 0
     app.$stel.core.observer.pitch = 0
     app.$stel.core.fov = 270
-    app.$store.commit('setValue', { varName: 'timeSpeed', newValue: 0 })
+    app.$stel.core.time_speed = 0
     app.$store.commit('setValue', { varName: 'showLocationButton', newValue: false })
     app.$store.commit('setValue', { varName: 'showTimeButtons', newValue: false })
     app.$store.commit('setValue', { varName: 'showFPS', newValue: true })
