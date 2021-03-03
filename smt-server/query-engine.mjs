@@ -401,30 +401,11 @@ export default {
         } else if (agOpt.operation === 'MIN_MAX') {
           selectClause += 'MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
-          // Special case, do custom queries, works only with 'GROUP_ALL'
-          console.assert(q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_ALL')
-          let fid = fId2SqlId(agOpt.fieldId)
-          let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NULL' : whereClause + ' AND ' + fid + ' IS NULL'
-          let req = 'SELECT COUNT(*) AS c ' + fromClause + wc
+          const fid = fId2SqlId(agOpt.fieldId)
+          let wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
+          let req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
           let res = that.db.prepare(req).get()
-          const null_count = res.c
-          wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
-          req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
-          res = that.db.prepare(req).get()
           postProcessSQLiteResult(res)
-          if (!res.dmin || !res.dmax) {
-            // No results
-            let data = {
-              noval: null_count,
-              min: undefined,
-              max: undefined,
-              step: '%Y-%m-%d',
-              table: [['Date', 'Count']]
-            }
-            let retd = {}
-            retd[agOpt.out] = data
-            return { q: q, res: [retd] }
-          }
           let start = new Date(res.dmin)
           start.setUTCHours(0, 0, 0, 0)
           // Switch to next day and truncate
@@ -451,42 +432,15 @@ export default {
             stop.setUTCFullYear(stop.getUTCFullYear(), 11, 31)
           }
 
-          let sqlQ = 'SELECT COUNT(*) AS c, STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\') AS d ' + fromClause + wc + ' GROUP BY STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')'
-          const res2 = that.db.prepare(sqlQ).all()
-          let data = {
-            noval: null_count,
+          selectClause += 'VALUES_AND_COUNT(' + 'STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') as ' + agOpt.out
+
+          agOpt.postProcessData = {
             min: start,
             max: stop,
             step: step,
             table: [['Date', 'Count']]
           }
 
-          let tmpTable = {}
-          // Prefill the table to make sure that all steps do have a value
-          let d = new Date(start.getTime())
-          if (step === '%Y') {
-            for (; d < stop; d.setUTCFullYear(d.getUTCFullYear() + 1)) {
-              tmpTable[d.toISOString().slice(0, 4)] = 0
-            }
-          } else if (step === '%Y-%m') {
-            for (; d < stop; d.setUTCMonth(d.getUTCMonth() + 1)) {
-              tmpTable[d.toISOString().slice(0, 7)] = 0
-            }
-          } else if (step === '%Y-%m-%d') {
-            for (; d < stop; d.setUTCDate(d.getUTCDate() + 1)) {
-              tmpTable[d.toISOString().slice(0, 10)] = 0
-            }
-          }
-          for (let j in res2) {
-            postProcessSQLiteResult(res2[j])
-            tmpTable[res2[j].d] = res2[j].c
-          }
-          Object.keys(tmpTable).forEach(function (key) {
-            data.table.push([key, tmpTable[key]])
-          })
-          let retd = {}
-          retd[agOpt.out] = data
-          return { q: q, res: [retd] }
         } else if (agOpt.operation === 'NUMBER_HISTOGRAM') {
           // Special case, do custom queries, works only with 'GROUP_ALL'
           console.assert(q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_ALL')
@@ -549,11 +503,53 @@ export default {
       }
     }
 
+    const postProcessAggResultLine = function (line) {
+      postProcessSQLiteResult(line)
+      for (let i in q.aggregationOptions) {
+        const agOpt = q.aggregationOptions[i]
+        if (agOpt.operation === 'DATE_HISTOGRAM') {
+          const start = agOpt.postProcessData.min
+          const stop = agOpt.postProcessData.max
+          const step = agOpt.postProcessData.step
+          let tmpTable = {}
+          // Prefill the table to make sure that all steps do have a value
+          let d = new Date(start.getTime())
+          if (step === '%Y') {
+            for (; d < stop; d.setUTCFullYear(d.getUTCFullYear() + 1)) {
+              tmpTable[d.toISOString().slice(0, 4)] = 0
+            }
+          } else if (step === '%Y-%m') {
+            for (; d < stop; d.setUTCMonth(d.getUTCMonth() + 1)) {
+              tmpTable[d.toISOString().slice(0, 7)] = 0
+            }
+          } else if (step === '%Y-%m-%d') {
+            for (; d < stop; d.setUTCDate(d.getUTCDate() + 1)) {
+              tmpTable[d.toISOString().slice(0, 10)] = 0
+            }
+          }
+          let data = _.cloneDeep(agOpt.postProcessData)
+          let r = line[agOpt.out]
+          for (let j in r) {
+            if (j === '__undefined')
+              data.noval = r[j]
+            else
+              tmpTable[j] = r[j]
+          }
+          Object.keys(tmpTable).forEach(function (key) {
+            data.table.push([key, tmpTable[key]])
+          })
+          line[agOpt.out] = data
+        }
+      }
+    }
+
     const sqlStatement = selectClause + fromClause + whereClause
     const res = that.db.prepare(sqlStatement).all()
     for (let i in res) {
-      postProcessSQLiteResult(res[i])
+      // Post-process each resulting line
+      postProcessAggResultLine(res[i])
     }
+    //console.log(res)
     return { q: q, res: res }
   },
 
