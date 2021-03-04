@@ -433,6 +433,7 @@ export default {
             start.setUTCMonth(0)
             stop.setUTCFullYear(stop.getUTCFullYear(), 11, 31)
           }
+          if (res.dmin === res.dmax) stop = start
 
           selectClause += 'VALUES_AND_COUNT(' + 'STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') AS ' + agOpt.out
 

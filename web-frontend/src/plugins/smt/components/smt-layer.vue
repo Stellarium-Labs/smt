@@ -519,7 +519,7 @@ export default {
         // Don't display date range if the range is <= 24h
         if (rf.field.widget === 'date_range' && rf.data) {
           if (rf.data.max === undefined || rf.data.min === undefined) continue
-          const dt = rf.data.max - rf.data.min
+          const dt = new Date(rf.data.max) - new Date(rf.data.min)
           if (dt <= 1000 * 60 * 60 * 24) continue
         }
         if (rf.field.widget === 'number_range' && rf.data) {
