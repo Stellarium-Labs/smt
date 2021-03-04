@@ -18,8 +18,10 @@ import geo_utils from './geojson-utils.mjs'
 import fs from 'fs'
 import workerpool from 'workerpool'
 import os from 'os'
+import healpix from '@hscmap/healpix'
 
 const HEALPIX_ORDER = 5
+const HEALPIX_PIXEL_AREA = healpix.nside2pixarea(1 << HEALPIX_ORDER)
 const __dirname = process.cwd()
 
 const fId2SqlId = function (fieldId) {
@@ -77,6 +79,7 @@ export default {
     that.fieldsMap['id'] = { type: 'string' }
     that.fieldsMap['healpix_index'] = { type: 'number' }
     that.fieldsMap['geogroup_id'] = { type: 'string' }
+    that.fieldsMap['area'] = { type: 'number' }
 
     // Add a custom aggregation operator for the chip tags
     db.aggregate('VALUES_AND_COUNT', {
@@ -185,11 +188,11 @@ export default {
     db.prepare('INSERT INTO smtconfig (data) VALUES (?)').run(JSON.stringify(smtConfig))
 
     const sqlFieldsAndTypes = fieldsList.map(f => fId2SqlId(f.id) + ' ' + fType2SqlType(f.type)).join(', ')
-    db.prepare('CREATE TABLE features (id TEXT, geometry TEXT, geogroup_id TEXT, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE TABLE features (id TEXT, geometry TEXT, geogroup_id TEXT, area REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
     db.prepare('CREATE INDEX idx_id ON features(id)').run()
     db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
 
-    db.prepare('CREATE TABLE subfeatures (id TEXT, geometry TEXT, healpix_index INT, geogroup_id TEXT, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE TABLE subfeatures (id TEXT, geometry TEXT, healpix_index INT, geogroup_id TEXT, area REAL, ' + sqlFieldsAndTypes + ')').run()
     db.prepare('CREATE INDEX idxsub_id ON subfeatures(id)').run()
     db.prepare('CREATE INDEX idxsub_geogroup_id ON subfeatures(geogroup_id)').run()
     db.prepare('CREATE INDEX idxsub_healpix_index ON subfeatures(healpix_index)').run()
@@ -271,14 +274,16 @@ export default {
         geometry: '__JSON' + JSON.stringify(feature.geometry)
       }
       _.assign(f, sqlValues)
-      allFeatures.push(f)
 
       const origProperties = feature.properties
       feature.properties = undefined
       const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
+      let area = 0
       for (let j = 0; j < newSubs.length; ++j) {
         const subF = newSubs[j]
         assert(subF.geometry)
+        subF.area = geo_utils.featureArea(subF)
+        area += subF.area
         subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
         subF.geogroup_id = feature.geogroup_id
         subF.id = feature.id
@@ -286,16 +291,18 @@ export default {
       }
       subFeatures = subFeatures.concat(newSubs)
       feature.properties = origProperties
+      f.area = area
+      allFeatures.push(f)
     })
 
-    const insert = db.prepare('INSERT INTO features VALUES (@id, @geometry, @geogroup_id, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+    const insert = db.prepare('INSERT INTO features VALUES (@id, @geometry, @geogroup_id, @area, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
     const insertMany = db.transaction((features) => {
       for (const feature of features)
         insert.run(feature)
     })
     insertMany(allFeatures)
 
-    const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @healpix_index, @geogroup_id, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+    const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
     const insertManySub = db.transaction((features) => {
       for (const feature of features)
         insertSub.run(feature)
