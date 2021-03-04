@@ -51,9 +51,6 @@ export default {
   db: undefined,
   dbFileName: undefined,
 
-  // Internal counter used to assign IDs
-  fcounter: 0,
-
   init: function (dbFileName) {
     let that = this
     assert(fs.existsSync(dbFileName))
@@ -76,7 +73,7 @@ export default {
       }
     }
     // Add dummy entries matching our generated fields
-    that.fieldsMap['id'] = { type: 'string' }
+    that.fieldsMap['id'] = { type: 'number' }
     that.fieldsMap['healpix_index'] = { type: 'number' }
     that.fieldsMap['geogroup_id'] = { type: 'string' }
     that.fieldsMap['area'] = { type: 'number' }
@@ -188,11 +185,10 @@ export default {
     db.prepare('INSERT INTO smtconfig (data) VALUES (?)').run(JSON.stringify(smtConfig))
 
     const sqlFieldsAndTypes = fieldsList.map(f => fId2SqlId(f.id) + ' ' + fType2SqlType(f.type)).join(', ')
-    db.prepare('CREATE TABLE features (id TEXT, geometry TEXT, geogroup_id TEXT, area REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
-    db.prepare('CREATE INDEX idx_id ON features(id)').run()
+    db.prepare('CREATE TABLE features (geometry TEXT, geogroup_id TEXT, area REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
     db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
 
-    db.prepare('CREATE TABLE subfeatures (id TEXT, geometry TEXT, healpix_index INT, geogroup_id TEXT, area REAL, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE TABLE subfeatures (id INT, geometry TEXT, healpix_index INT, geogroup_id TEXT, area REAL, ' + sqlFieldsAndTypes + ')').run()
     db.prepare('CREATE INDEX idxsub_id ON subfeatures(id)').run()
     db.prepare('CREATE INDEX idxsub_geogroup_id ON subfeatures(geogroup_id)').run()
     db.prepare('CREATE INDEX idxsub_healpix_index ON subfeatures(healpix_index)').run()
@@ -240,74 +236,68 @@ export default {
     console.log('Loading ' + jsonData.features.length + ' features' + (quickTestMode ? ' (quick test mode)' : ''))
     geo_utils.normalizeGeoJson(jsonData)
 
-    // Insert all data
-    let subFeatures = []
-    let allFeatures = []
-    turf.featureEach(jsonData, function (feature, featureIndex) {
-      if (feature.geometry.type === 'MultiPolygon') {
-        geo_utils.unionMergeMultiPolygon(feature)
-      }
-      feature.geogroup_id = _.get(feature, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
-      feature.id = that.fcounter++
-
-      // Prepare all values to insert in SQL DB
-      const sqlValues = {}
-      for (let i = 0; i < fieldsList.length; ++i) {
-        const field = fieldsList[i]
-        let d
-        if (field.computed_compiled) {
-          d = field.computed_compiled(feature.properties)
-          if (isNaN(d)) d = undefined
-        } else {
-          d = _.get(feature.properties, field.id, undefined)
-          if (d !== undefined && field.type === 'date') {
-            d = new Date(d).getTime()
-          }
-        }
-        sqlValues[sqlFields[i]] = d
-      }
-
-      const f = {
-        id: feature.id,
-        geogroup_id: feature.geogroup_id,
-        properties: '__JSON' + JSON.stringify(feature.properties),
-        geometry: '__JSON' + JSON.stringify(feature.geometry)
-      }
-      _.assign(f, sqlValues)
-
-      const origProperties = feature.properties
-      feature.properties = undefined
-      const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
-      let area = 0
-      for (let j = 0; j < newSubs.length; ++j) {
-        const subF = newSubs[j]
-        assert(subF.geometry)
-        subF.area = geo_utils.featureArea(subF)
-        area += subF.area
-        subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
-        subF.geogroup_id = feature.geogroup_id
-        subF.id = feature.id
-        _.assign(subF, sqlValues)
-      }
-      subFeatures = subFeatures.concat(newSubs)
-      feature.properties = origProperties
-      f.area = area
-      allFeatures.push(f)
-    })
-
-    const insert = db.prepare('INSERT INTO features VALUES (@id, @geometry, @geogroup_id, @area, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
-    const insertMany = db.transaction((features) => {
-      for (const feature of features)
-        insert.run(feature)
-    })
-    insertMany(allFeatures)
-
+    // Prepare SQL insertion commands
+    const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
     const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
-    const insertManySub = db.transaction((features) => {
-      for (const feature of features)
-        insertSub.run(feature)
+
+    const insertMany = db.transaction((_jsonData) => {
+      // Insert all data
+      turf.featureEach(_jsonData, function (feature, featureIndex) {
+        if (feature.geometry.type === 'MultiPolygon') {
+          geo_utils.unionMergeMultiPolygon(feature)
+        }
+        feature.geogroup_id = _.get(feature, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
+
+        // Prepare all values to insert in SQL DB
+        const sqlValues = {}
+        for (let i = 0; i < fieldsList.length; ++i) {
+          const field = fieldsList[i]
+          let d
+          if (field.computed_compiled) {
+            d = field.computed_compiled(feature.properties)
+            if (isNaN(d)) d = undefined
+          } else {
+            d = _.get(feature.properties, field.id, undefined)
+            if (d !== undefined && field.type === 'date') {
+              d = new Date(d).getTime()
+            }
+          }
+          sqlValues[sqlFields[i]] = d
+        }
+
+        const origProperties = feature.properties
+        feature.properties = undefined
+        const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
+        let area = 0
+        for (let j = 0; j < newSubs.length; ++j) {
+          const subF = newSubs[j]
+          assert(subF.geometry)
+          subF.area = geo_utils.featureArea(subF)
+          area += subF.area
+          subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
+          subF.geogroup_id = feature.geogroup_id
+          _.assign(subF, sqlValues)
+        }
+        feature.properties = origProperties
+
+        const f = {
+          geogroup_id: feature.geogroup_id,
+          properties: '__JSON' + JSON.stringify(feature.properties),
+          geometry: '__JSON' + JSON.stringify(feature.geometry),
+          area: area
+        }
+        _.assign(f, sqlValues)
+
+        // Insert one feature, and get the unique rowid to assign it to the
+        // id field of the subfeatures
+        const info = insertOne.run(f)
+        for (const subF of newSubs) {
+          subF.id = info.lastInsertRowid
+          insertSub.run(subF)
+        }
+      })
     })
-    insertManySub(subFeatures)
+    insertMany(jsonData)
     db.close()
   },
 

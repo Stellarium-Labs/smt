@@ -131,7 +131,6 @@ export default {
           { fieldId: 'geogroup_id', operation: 'IN', expression: geogroupIds, negate: false }
         ],
         projectOptions: {
-          id: 1,
           properties: 1,
           geometry: 1
         },
