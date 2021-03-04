@@ -22,6 +22,7 @@ function lasyInit(dbFileName) {
 
 // Create a worker and register public functions
 workerpool.worker({
+  ingestGeoJson: function (...params) { return qe.ingestGeoJson(...params) },
   query: function (...params) { lasyInit(params.shift()); return qe.query(...params) },
   getHipsTile: function (...params) { lasyInit(params.shift()); return qe.getHipsTile(...params) },
 })

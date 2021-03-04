@@ -153,8 +153,8 @@ const initServer = async function (dbFileName) {
 
   if (reloadGeojson) {
     console.log('Data or code has changed since last start: reload geojson')
-    qe.generateDb(__dirname + '/data/', dbFileName)
-    console.log('Loading finished')
+    await qe.generateDb(__dirname + '/data/', dbFileName)
+    console.log('*** DB Loading finished ***')
     fs.writeFileSync(dbFileName + '-HashKey.txt', SMT_SERVER_INFO.baseHashKey)
   } else {
     console.log('No data/code change since last start: reload previous DB')
