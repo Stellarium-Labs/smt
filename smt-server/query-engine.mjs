@@ -100,46 +100,97 @@ export default {
       result: accumulator => accumulator && accumulator[0] !== null ? '__JSON' + JSON.stringify(accumulator) : undefined
     })
 
-    // Works only for objects close to each others and of small size
-    db.aggregate('GEO_UNION', {
+    // Geo union for features guaranteed to be in the same healpix pixel
+    db.aggregate('GEO_UNION_ON_HEALPIX', {
       start: undefined,
-      step: (accumulator, value) => {
-        console.assert(typeof value === 'string' && value.startsWith('__JSON'))
-        value = JSON.parse(value.substring(6))
-        if (!accumulator) {
-          const feature = {
-            "type": "Feature",
-            "geometry": value
+      step: function (accumulator, healpixIndex, geometry, area) {
+        console.assert(typeof geometry === 'string' && geometry.startsWith('__JSON'))
+        if (accumulator) console.assert(accumulator.healpixIndex === healpixIndex)
+        if (accumulator && accumulator.pixelFull) return accumulator
+        const pixelFull = area >= HEALPIX_PIXEL_AREA
+        if (!accumulator || pixelFull) {
+          return {
+            data: [{area: area, geometry: geometry}],
+            pixelFull: pixelFull,
+            healpixIndex: healpixIndex
           }
-          const shiftCenter = turf.pointOnFeature(feature).geometry.coordinates
-
-          // Compute shift matrices
-          const center = geo_utils.geojsonPointToVec3(shiftCenter)
-          const mats = geo_utils.rotationMatsForShiftCenter(center)
-          feature.m = mats.m
-          feature.mInv = mats.mInv
-          geo_utils.rotateGeojsonFeature(feature, feature.m)
-          return feature
         }
-        try {
-          const f2 =  {
-            "type": "Feature",
-            "geometry": value
-          }
-          geo_utils.rotateGeojsonFeature(f2, accumulator.m)
-          const union = turf.union(accumulator, f2)
-          accumulator.geometry = union.geometry
-          return accumulator
-        } catch (err) {
-          console.log('Error computing feature union: ' + err)
-          return accumulator
-        }
+        accumulator.data.push({area: area, geometry: geometry})
+        accumulator.pixelFull = pixelFull
       },
       result: accumulator => {
         if (!accumulator)
           return undefined
-        geo_utils.rotateGeojsonFeature(accumulator, accumulator.mInv)
-        return '__JSON' + JSON.stringify(accumulator.geometry)
+        // Remove duplicate geometry to avoid useless unions
+        const set = new Set(accumulator.data.map(e => e.geometry))
+        if (set.size === 1)
+          return accumulator.data[0].geometry
+
+        // Now we need to compute union
+        let union
+        for (const item of set) {
+          const f = { type: "Feature", geometry: JSON.parse(item.substring(6)) }
+          if (union === undefined) {
+            union = f
+          } else {
+            try {
+              union = turf.union(union, f)
+              const farea = geo_utils.featureArea(union)
+              if (farea >= HEALPIX_PIXEL_AREA) break
+            } catch (err) {
+              console.log('Error computing feature union: ' + err)
+            }
+          }
+        }
+        return '__JSON' + JSON.stringify(union.geometry)
+      }
+    })
+
+    db.aggregate('GEO_UNION_AREA_ON_HEALPIX', {
+      start: undefined,
+      step: function (accumulator, healpixIndex, geometry, area) {
+        console.assert(typeof geometry === 'string' && geometry.startsWith('__JSON'))
+        if (accumulator) console.assert(accumulator.healpixIndex === healpixIndex)
+        if (accumulator && accumulator.pixelFull) return accumulator
+        const pixelFull = area >= HEALPIX_PIXEL_AREA
+        if (!accumulator || pixelFull) {
+          return {
+            data: [{area: area, geometry: geometry}],
+            pixelFull: pixelFull,
+            healpixIndex: healpixIndex
+          }
+        }
+        accumulator.data.push({area: area, geometry: geometry})
+        accumulator.pixelFull = pixelFull
+      },
+      result: accumulator => {
+        if (!accumulator)
+          return undefined
+        // Remove duplicate geometry to avoid useless unions
+        const set = new Set(accumulator.data.map(e => e.geometry))
+        if (set.size === 1)
+          return accumulator.data[0].area
+
+        // Now we need to compute union
+        let union
+        let farea = 0
+        let lastErr
+        for (const item of set) {
+          const f = { type: "Feature", geometry: JSON.parse(item.substring(6)) }
+          if (union === undefined) {
+            union = f
+          } else {
+            try {
+              union = turf.union(union, f)
+            } catch (err) {
+              lastErr = err
+            }
+          }
+          farea = geo_utils.featureArea(union)
+          if (farea >= HEALPIX_PIXEL_AREA) return farea
+        }
+        if (lastErr) console.log('Last error while computing union: ' + lastErr)
+        return farea
       }
     })
 
@@ -188,7 +239,7 @@ export default {
     db.prepare('CREATE TABLE features (geometry TEXT, geogroup_id TEXT, area REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
     db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
 
-    db.prepare('CREATE TABLE subfeatures (id INT, geometry TEXT, healpix_index INT, geogroup_id TEXT, area REAL, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE TABLE subfeatures (id INT, geometry TEXT, geometry_rot TEXT, healpix_index INT, geogroup_id TEXT, area REAL, ' + sqlFieldsAndTypes + ')').run()
     db.prepare('CREATE INDEX idxsub_id ON subfeatures(id)').run()
     db.prepare('CREATE INDEX idxsub_geogroup_id ON subfeatures(geogroup_id)').run()
     db.prepare('CREATE INDEX idxsub_healpix_index ON subfeatures(healpix_index)').run()
@@ -267,9 +318,13 @@ export default {
       for (let j = 0; j < newSubs.length; ++j) {
         const subF = newSubs[j]
         assert(subF.geometry)
-        subF.area = geo_utils.featureArea(subF)
+        const rotationMats = geo_utils.getHealpixRotationMats(HEALPIX_ORDER, subF.healpix_index)
+        const subFrot = _.cloneDeep(subF)
+        geo_utils.rotateGeojsonFeature(subFrot, rotationMats.m)
+        subF.area = geo_utils.featureArea(subFrot)
         area += subF.area
         subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
+        subF.geometry_rot = '__JSON' + JSON.stringify(subFrot.geometry)
         subF.geogroup_id = feature.geogroup_id
         _.assign(subF, sqlValues)
       }
@@ -288,7 +343,7 @@ export default {
 
     // Prepare SQL insertion commands
     const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
-    const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+    const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @geometry_rot, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
     // Perform SQL transaction
     const insertMany = db.transaction(function (allF) {
       for (const i in allF) {
@@ -626,28 +681,8 @@ export default {
 
   computeArea: function (q) {
     let whereClause = this.constraints2SQLWhereClause(q.constraints)
-
-    // Query to get the list of healpix indices fully covered by the results or
-    // which contain only one feature: for these there is no need to compute
-    // the union of all geometry
-    let sqlStatement = 'SELECT a FROM (SELECT MAX(area) as a, COUNT(*) as c FROM subfeatures ' + whereClause + ' GROUP BY healpix_index) WHERE a >= ' + HEALPIX_PIXEL_AREA + ' OR c = 1'
-    let res = this.db.prepare(sqlStatement).all()
-    let area = 0
-    res.forEach(e => area += e.a)
-
-    // Query to get the list of healpix indices partially covered by the results
-    // with more than 1 feature
-    const full_hp_index_sql = 'SELECT healpix_index FROM (SELECT MAX(area) as a, COUNT(*) as c, healpix_index FROM subfeatures ' + whereClause + ' GROUP BY healpix_index) WHERE a < ' + HEALPIX_PIXEL_AREA + ' AND c > 1'
-    res = this.db.prepare(full_hp_index_sql).all()
-
-    let wc = ' healpix_index IN (' + full_hp_index_sql + ')'
-    wc = whereClause === '' ? ' WHERE ' + wc : whereClause + ' AND ' + wc
-    sqlStatement = 'SELECT GEO_UNION(geometry) as feature FROM subfeatures ' + wc + ' GROUP BY healpix_index'
-    res = this.db.prepare(sqlStatement).all()
-    for (const item of res) {
-      postProcessSQLiteResult(item)
-      area += geo_utils.featureArea(item.feature)
-    }
-    return area
+    let sqlStatement = 'SELECT SUM(area) as area FROM (SELECT GEO_UNION_AREA_ON_HEALPIX(healpix_index, geometry_rot, area) as area FROM subfeatures ' + whereClause + ' GROUP BY healpix_index)'
+    let res = this.db.prepare(sqlStatement).get()
+    return res.area
   }
 }
