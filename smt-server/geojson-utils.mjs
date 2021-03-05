@@ -107,7 +107,8 @@ export default {
   },
 
   rotateGeojsonFeature: function (feature, m) {
-    const sameFirstLastPoint = feature.geometry.coordinates[0][0] === feature.geometry.coordinates[0][feature.geometry.coordinates[0].length - 1]
+    const ring = feature.geometry.type === 'MultiPolygon' ? feature.geometry.coordinates[0] : feature.geometry.coordinates
+    const sameFirstLastPoint = ring[0][0] === ring[0][ring[0].length - 1]
     turf.coordEach(feature, p => {rotateGeojsonPoint(p, m)}, sameFirstLastPoint)
   },
 
