@@ -100,6 +100,7 @@ export default {
       result: accumulator => accumulator && accumulator[0] !== null ? '__JSON' + JSON.stringify(accumulator) : undefined
     })
 
+    // Works only for objects close to each others and of small size
     db.aggregate('GEO_UNION', {
       start: undefined,
       step: (accumulator, value) => {
@@ -402,6 +403,8 @@ export default {
           selectClause += 'VALUES_AND_COUNT(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
         } else if (agOpt.operation === 'MIN_MAX') {
           selectClause += 'MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
+        } else if (agOpt.operation === 'GEO_UNION_AREA') {
+          agOpt.postProcessData = that.computeArea(q)
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           const fid = fId2SqlId(agOpt.fieldId)
           const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
@@ -477,7 +480,9 @@ export default {
       postProcessSQLiteResult(line)
       for (let i in q.aggregationOptions) {
         const agOpt = q.aggregationOptions[i]
-        if (agOpt.operation === 'DATE_HISTOGRAM') {
+        if (agOpt.operation === 'GEO_UNION_AREA') {
+          line[agOpt.out] = agOpt.postProcessData
+        } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           const start = agOpt.postProcessData.min
           const stop = agOpt.postProcessData.max
           const step = agOpt.postProcessData.step
@@ -538,13 +543,15 @@ export default {
       }
     }
 
-    const sqlStatement = selectClause + fromClause + whereClause
-    const res = that.db.prepare(sqlStatement).all()
+    let res = [{}]
+    if (selectClause !== 'SELECT ') {
+      const sqlStatement = selectClause + fromClause + whereClause
+      res = that.db.prepare(sqlStatement).all()
+    }
     for (let i in res) {
       // Post-process each resulting line
       postProcessAggResultLine(res[i])
     }
-    //console.log(res)
     return { q: q, res: res }
   },
 
@@ -615,5 +622,32 @@ export default {
       geojson.features.push(feature)
     }
     return geojson.features.length ? geojson : undefined
+  },
+
+  computeArea: function (q) {
+    let whereClause = this.constraints2SQLWhereClause(q.constraints)
+
+    // Query to get the list of healpix indices fully covered by the results or
+    // which contain only one feature: for these there is no need to compute
+    // the union of all geometry
+    let sqlStatement = 'SELECT a FROM (SELECT MAX(area) as a, COUNT(*) as c FROM subfeatures ' + whereClause + ' GROUP BY healpix_index) WHERE a >= ' + HEALPIX_PIXEL_AREA + ' OR c = 1'
+    let res = this.db.prepare(sqlStatement).all()
+    let area = 0
+    res.forEach(e => area += e.a)
+
+    // Query to get the list of healpix indices partially covered by the results
+    // with more than 1 feature
+    const full_hp_index_sql = 'SELECT healpix_index FROM (SELECT MAX(area) as a, COUNT(*) as c, healpix_index FROM subfeatures ' + whereClause + ' GROUP BY healpix_index) WHERE a < ' + HEALPIX_PIXEL_AREA + ' AND c > 1'
+    res = this.db.prepare(full_hp_index_sql).all()
+
+    let wc = ' healpix_index IN (' + full_hp_index_sql + ')'
+    wc = whereClause === '' ? ' WHERE ' + wc : whereClause + ' AND ' + wc
+    sqlStatement = 'SELECT GEO_UNION(geometry) as feature FROM subfeatures ' + wc + ' GROUP BY healpix_index'
+    res = this.db.prepare(sqlStatement).all()
+    for (const item of res) {
+      postProcessSQLiteResult(item)
+      area += geo_utils.featureArea(item.feature)
+    }
+    return area
   }
 }
