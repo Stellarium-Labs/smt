@@ -39,6 +39,10 @@
           <v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>
           {{ results.summary.count }} items
         </div>
+        <div class="display-1 text--primary">
+          <v-progress-circular v-if="results.summary.area === undefined" size=18 indeterminate></v-progress-circular>
+          {{ results.summary.area !== undefined ? results.summary.area.toFixed(2) : '' }} deg²
+        </div>
         <div v-if="constraintsToDisplay.length" class="mt-2">Constraints:</div>
         <v-row no-gutters>
           <div v-for="(constraint, i) in constraintsToDisplay" :key="i" style="text-align: center;" class="pa-1">
@@ -104,7 +108,8 @@ export default {
       editedConstraint: undefined,
       results: {
         summary: {
-          count: 0
+          count: 0,
+          area: 0
         },
         fields: [],
         implicitConstraints: []
@@ -175,13 +180,23 @@ export default {
       const that = this
 
       // Re-compute layer count
-      const q1 = {
+      let q1 = {
         constraints: that.query.constraints,
         groupingOptions: [{ operation: 'GROUP_ALL' }],
         aggregationOptions: [{ operation: 'COUNT', out: 'total' }]
       }
       qe.query(q1).then(res => {
         that.results.summary.count = res.res[0].total
+      })
+
+      // Re-compute area covered by the features of this layer
+      q1 = {
+        constraints: that.query.constraints,
+        groupingOptions: [{ operation: 'GROUP_ALL' }],
+        aggregationOptions: [{ operation: 'GEO_UNION_AREA', out: 'area' }]
+      }
+      qe.query(q1).then(res => {
+        that.results.summary.area = res.res[0].area * (180 / Math.PI) * (180 / Math.PI)
       })
 
       const queryConstraintsEdited = this.query.constraints.filter(c => !this.isEdited(c))
@@ -302,6 +317,7 @@ export default {
       that.results.fields = that.$smt.fields.map(function (e) { return { status: 'loading', data: {} } })
       that.results.implicitConstraints = []
       that.results.summary.count = undefined
+      that.results.summary.area = undefined
 
       if (that.colorAssignedField.widget !== 'tags') {
         // For later steps, computing the color requires to know the min/max range first.
