@@ -623,6 +623,7 @@ export default {
           })
           line[agOpt.out] = data
         }
+        agOpt.postProcessData = undefined
       }
     }
 
