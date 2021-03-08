@@ -11,7 +11,7 @@
 
 <template>
   <div style="height: 100%;">
-    <img :src="watermarkImage" style="position: fixed; left: 5px; bottom: 5px; opacity: 0.7;"></img>
+    <img :src="watermarkImage" style="position: fixed; left: 5px; bottom: 5px; opacity: 0.4;"></img>
     <smt-panel-root-toolbar></smt-panel-root-toolbar>
     <v-chip-group v-model="tab" center-active mandatory show-arrows active-class="chip-tab-active" style="margin-left: 5px; height: 38px;">
       <draggable v-model="layersList">

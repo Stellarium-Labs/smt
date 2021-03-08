@@ -14,10 +14,6 @@
 <v-toolbar dense class="obspanel-toolbar">
   <span class="px-2 grey--text">SMT - <a href="https://github.com/Stellarium-Labs/smt/blob/survey-monitoring-tool/smt-server/CHANGELOG.md" target="_blank">{{ $store.state.SMT.smtServerInfo.version }}</a></span>
   <v-spacer></v-spacer>
-  <v-progress-circular v-if="$store.state.SMT.status === 'loading'" size=18 indeterminate></v-progress-circular>
-  <span class="px-2">Server {{ $store.state.SMT.status }}</span>
-  <v-btn icon class="transparent" @click.stop="dialog = true"><v-icon>mdi-information-outline</v-icon></v-btn>
-
   <v-dialog v-model="dialog" max-width="600">
     <v-card>
       <v-card-title class="headline">SMT Server Info</v-card-title>
@@ -34,6 +30,10 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+  <v-spacer></v-spacer>
+<!--  <v-progress-circular v-if="$store.state.SMT.status === 'loading'" size=18 indeterminate></v-progress-circular>-->
+  <span class="px-2">Server {{ $store.state.SMT.status }}</span>
+  <v-btn icon class="transparent" @click.stop="dialog = true"><v-icon>mdi-information-outline</v-icon></v-btn>
 </v-toolbar>
 
 </template>
