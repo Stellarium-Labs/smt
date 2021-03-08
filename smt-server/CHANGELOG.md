@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0] - 2021-03-08
+- Refactor engine aggreagations to prepare for time histogram computation
+- Load geojson files in parallel using web workers
+- Improve spatial union aggregation function
+- Compute and display the area covered by a layer
+
 ## [0.2.3] - 2021-01-22
 - Improve selection highlight
 - Hide unused part of Stellarium web GUI
