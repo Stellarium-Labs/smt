@@ -13,37 +13,52 @@
   <div style="height: 100%; display: flex; flex-flow: column;">
     <smt-selection-info :selectedFeatures="selectedFootprintData" :query="query" @unselect="unselect()"></smt-selection-info>
     <v-card tile color="#424242">
-      <v-card-text>
-          <v-row no-gutters>
-            <v-col cols="1"><div style="padding-top: 7px;">Color</div></v-col>
-            <v-col cols="5">
-              <div>
-              <v-menu close-on-click>
-                <template v-slot:activator="{ on, attrs }">
-                  <v-btn x-small text elevation="3" dark v-bind="attrs" v-on="on">{{colorAssignedField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
-                </template>
-                <v-list>
-                  <v-list-item v-for="(item, index) in $smt.fields" :key="index" @click="colorAssignedField = item">
-                    <v-list-item-title>{{ item.name }}</v-list-item-title>
-                  </v-list-item>
-                </v-list>
-              </v-menu>
-              </div>
-            </v-col>
-            <v-col cols="2"><div class="pr-1 text-right" style="padding-top: 7px;">Opacity</div></v-col>
-            <v-col cols="4">
-              <v-slider dense max="255" min="0" v-model="opacitySliderValue"></v-slider>
-            </v-col>
-          </v-row>
-        <div class="display-1 text--primary">
-          <v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>
-          {{ results.summary.count }} items
-        </div>
-        <div class="display-1 text--primary">
-          <v-progress-circular v-if="results.summary.area === undefined" size=18 indeterminate></v-progress-circular>
-          {{ results.summary.area !== undefined ? results.summary.area.toFixed(2) : '' }} deg²
-        </div>
-        <div v-if="constraintsToDisplay.length" class="mt-2">Constraints:</div>
+      <v-card-text style="padding-top: 8px;">
+        <v-row no-gutters>
+          <v-col cols="2"><div style="padding-top: 7px;">Color</div></v-col>
+          <v-col cols="5">
+            <v-menu close-on-click>
+              <template v-slot:activator="{ on, attrs }">
+                <v-btn x-small text elevation="3" dark v-bind="attrs" v-on="on">{{colorAssignedField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
+              </template>
+              <v-list>
+                <v-list-item v-for="(item, index) in $smt.fields" :key="index" @click="colorAssignedField = item">
+                  <v-list-item-title>{{ item.name }}</v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-menu>
+          </v-col>
+          <v-col cols="5"></v-col>
+        </v-row>
+        <v-row no-gutters>
+          <v-col cols="2"><div class="pr-1" style="padding-top: 7px;">Opacity</div></v-col>
+          <v-col cols="5">
+            <v-slider dense max="255" min="0" v-model="opacitySliderValue"></v-slider>
+          </v-col>
+          <v-col cols="1"></v-col>
+          <v-col cols="2"><div style="padding-top: 7px;">Fit view</div></v-col>
+          <v-col cols="1">
+            <v-switch style="margin-top: 0;" dense v-model="autoFitViewToContent"></v-switch>
+          </v-col>
+          <v-col cols="1"></v-col>
+        </v-row>
+        <v-row no-gutters>
+          <v-col cols="6">
+            <span class="text-h4 text--primary">
+              <v-progress-circular v-if="results.summary.count === undefined" size=18 indeterminate></v-progress-circular>
+              {{ results.summary.count }}
+            </span>
+            <span class="text-subtitle-1">items</span>
+          </v-col>
+          <v-col cols="6">
+            <span class="text-h4 text--primary">
+              <v-progress-circular v-if="results.summary.area === undefined" size=18 indeterminate></v-progress-circular>
+              {{ results.summary.area !== undefined ? results.summary.area.toFixed(2) : '' }}
+            </span>
+            <span class="text-subtitle-1">deg²</span>
+          </v-col>
+        </v-row>
+        <div v-if="constraintsToDisplay.length" class="mt-2 line_right_left" style="text-align: center;">Constraints</div>
         <v-row no-gutters>
           <div v-for="(constraint, i) in constraintsToDisplay" :key="i" style="text-align: center;" class="pa-1">
             <div class="caption white--text">{{ constraint.field.name }}</div>
@@ -101,6 +116,7 @@ export default {
       opacitySliderValue: 0.3 * 255,
       colorAssignedField: this.$smt.fields.find(f => f.id === this.$smt.defaultColorAssignedFieldId) || this.$smt.fields[0].id,
       colorAssignedFieldRange: [0, 1],
+      autoFitViewToContent: false,
       query: {
         constraints: [],
         liveConstraint: undefined
@@ -157,8 +173,40 @@ export default {
       if (c.field.widget === 'number_range') return undefined
       return this.cssColorForTag(c.expression)
     },
+    fitViewToContent: function () {
+      const that = this
+      // Re-compute bounding cap containing all features of this layer
+      const q = {
+        constraints: that.query.constraints,
+        groupingOptions: [{ operation: 'GROUP_ALL' }],
+        aggregationOptions: [{ operation: 'GEO_BOUNDING_CAP', out: 'cap' }]
+      }
+      qe.query(q).then(res => {
+        const cap = res.res[0].cap
+        const d = [cap[0], cap[1], cap[2]]
+        const pos = that.$stel.convertFrame(that.$stel.core.observer, 'ICRF', 'MOUNT', d)
+        const fov = Math.acos(cap[3]) * 2
+        that.$stel.lookAt(pos, 0)
+        that.$stel.zoomTo(fov * 1.5, 0)
+        // const radec = that.$stel.c2s(d)
+        // const ra = that.$stel.anp(radec[0]) * 180 / Math.PI
+        // const dec = that.$stel.anpm(radec[1]) * 180 / Math.PI
+        // const shapeParams = {
+        //   pos: [d[0], d[1], d[2], 0],
+        //   frame: that.$stel.FRAME_ICRF,
+        //   size: [fov, fov],
+        //   color: [0.0, 0.0, 0.5, 0.12],
+        //   border_color: [0.1, 0.1, 0.6, 1]
+        // }
+        // if (that.cap) that.$observingLayer.remove(that.cap)
+        // that.cap = that.$observingLayer.add('circle', shapeParams)
+      })
+    },
     refreshObservationsInSky: function () {
       const that = this
+
+      if (this.autoFitViewToContent) this.fitViewToContent()
+
       const q2 = {
         constraints: that.query.constraints
       }
@@ -486,6 +534,9 @@ export default {
       if (this.geojsonObj) {
         this.geojsonObj.z = this.z
       }
+    },
+    autoFitViewToContent: function () {
+      if (this.autoFitViewToContent) this.fitViewToContent()
     }
   },
   computed: {
@@ -579,4 +630,33 @@ ul {
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
+
+.line_right_left {
+  overflow: hidden;
+}
+
+.line_right_left:after {
+  background-color: #666;
+  content: "";
+  display: inline-block;
+  height: 1px;
+  position: relative;
+  vertical-align: middle;
+  width: 100%;
+  left: 20px;
+  margin-right: -100%;
+}
+
+.line_right_left:before {
+  background-color: #666;
+  content: "";
+  display: inline-block;
+  height: 1px;
+  position: relative;
+  vertical-align: middle;
+  width: 100%;
+  right: 20px;
+  margin-left: -100%;
+}
+
 </style>
