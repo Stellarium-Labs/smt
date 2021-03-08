@@ -1,7 +1,13 @@
 # Changelog
 
+## [0.3.1] - 2021-03-08
+- Add bounding cap aggregation to get the bounding cap for a layer
+- Add a switch button to auto-fit the view to the layer's content
+- Fix an issue with slow area computation queries being interlaced
+- Minor layer re-styling
+
 ## [0.3.0] - 2021-03-08
-- Refactor engine aggreagations to prepare for time histogram computation
+- Refactor engine aggregations to prepare for time histogram computation
 - Load geojson files in parallel using web workers
 - Improve spatial union aggregation function
 - Compute and display the area covered by a layer
