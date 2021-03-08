@@ -88,6 +88,7 @@ import Moment from 'moment'
 import murmurhash from 'murmurhash'
 import qe from '../query-engine'
 import _ from 'lodash'
+import stableStringify from 'json-stable-stringify'
 
 const stringHash = function (str) {
   return murmurhash.v2(str + 'Stellarium Labs')
@@ -243,7 +244,9 @@ export default {
         groupingOptions: [{ operation: 'GROUP_ALL' }],
         aggregationOptions: [{ operation: 'GEO_UNION_AREA', out: 'area' }]
       }
+      that.lastQuery = stringHash(stableStringify(q1))
       qe.query(q1).then(res => {
+        if (that.lastQuery !== stringHash(stableStringify(res.q))) return
         that.results.summary.area = res.res[0].area * (180 / Math.PI) * (180 / Math.PI)
       })
 
