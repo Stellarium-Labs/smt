@@ -69,6 +69,60 @@ export default {
 
   geojsonPointToVec3: geojsonPointToVec3,
 
+  // Return the bounding cap for a feature
+  featureBoundingCap: function (feature) {
+    const v = geojsonPointToVec3(turf.centroid(feature).geometry.coordinates)
+    let cosa = 1
+    turf.coordEach(feature, function(coord) {
+      const p = geojsonPointToVec3(coord)
+      const cosAngle = v[0] * p[0] + v[1] * p[1] + v[2] * p[2]
+      if (cosAngle < cosa) cosa = cosAngle
+    })
+    if (cosa <= -0.9999999) return [1, 0, 0, -1]
+    return [v[0], v[1], v[2], cosa]
+  },
+
+  capContainsCap: function (cap1, cap2) {
+    const d1 = cap1[3]
+    const d2 = cap2[3]
+    const a = glMatrix.vec3.dot(cap1, cap2) - d1 * d2
+    return d1 <= d2 && (a >= 1.0 || (a >= 0.0 && a*a >= (1. - d1 * d1) * (1.0 - d2 * d2)))
+  },
+
+  // Return the smallest bounding cap which contains cap1 and cap2
+  mergeCaps: function (cap1, cap2) {
+    if (cap1[3] <= -0.9999999 || cap2[3] <= -0.9999999)
+      return [1, 0, 0, -1]
+    if (cap1[3] < cap2[3]) {
+      if (this.capContainsCap(cap1, cap2)) return cap1
+    } else {
+      if (this.capContainsCap(cap2, cap1)) return cap2
+    }
+    const cap1Angle = Math.acos(cap1[3])
+    const cap2Angle = Math.acos(cap2[3])
+    const cap1Vec = glMatrix.vec3.fromValues(cap1[0], cap1[1], cap1[2])
+    const cap2Vec = glMatrix.vec3.fromValues(cap2[0], cap2[1], cap2[2])
+    console.assert(Math.abs(glMatrix.vec3.length(cap1Vec) - 1) < 0.0000001)
+    console.assert(Math.abs(glMatrix.vec3.length(cap2Vec) - 1) < 0.0000001)
+    const distAngle = Math.acos(glMatrix.vec3.dot(cap1Vec, cap2Vec))
+    if (distAngle < 0.00000001)
+      return [cap1[0], cap1[1], cap1[2], Math.min(cap1[3], cap2[3])]
+    if (distAngle >= Math.PI - 0.00000001)
+      return [1, 0, 0, -1]
+    const newCapAngle = (cap1Angle + cap2Angle + distAngle) / 2
+    console.assert(newCapAngle >= cap1Angle && newCapAngle >= cap2Angle)
+    if (newCapAngle >= Math.PI)
+      return [1, 0, 0, -1]
+    let v = glMatrix.vec3.create()
+    glMatrix.vec3.cross(v, cap1Vec, cap2Vec)
+    glMatrix.vec3.normalize(v, v)
+    let q = glMatrix.quat.create()
+    glMatrix.quat.setAxisAngle(q, v, -cap1Angle + newCapAngle)
+    glMatrix.vec3.transformQuat(v, cap1Vec, q)
+    console.assert(Math.abs(glMatrix.vec3.length(v) - 1) < 0.0000001)
+    return [v[0], v[1], v[2], Math.cos(newCapAngle)]
+  },
+
   // Try to merge elements from a MultiPolygon into a single Polygon
   // This is useful if elements from a multipolygon overlap
   unionMergeMultiPolygon: function (feature) {

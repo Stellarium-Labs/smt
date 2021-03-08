@@ -77,6 +77,10 @@ export default {
     that.fieldsMap['healpix_index'] = { type: 'number' }
     that.fieldsMap['geogroup_id'] = { type: 'string' }
     that.fieldsMap['area'] = { type: 'number' }
+    that.fieldsMap['geocap_x'] = { type: 'number' }
+    that.fieldsMap['geocap_y'] = { type: 'number' }
+    that.fieldsMap['geocap_z'] = { type: 'number' }
+    that.fieldsMap['geocap_cosa'] = { type: 'number' }
 
     // Add a custom aggregation operator for the chip tags
     db.aggregate('VALUES_AND_COUNT', {
@@ -194,6 +198,23 @@ export default {
       }
     })
 
+    // Get a bounding cap which contains all features
+    db.aggregate('GEO_BOUNDING_CAP', {
+      start: undefined,
+      step: function (accumulator, geocap_x, geocap_y, geocap_z, geocap_cosa) {
+        if (!accumulator) {
+          return [geocap_x, geocap_y, geocap_z, geocap_cosa]
+        }
+        accumulator = geo_utils.mergeCaps(accumulator, [geocap_x, geocap_y, geocap_z, geocap_cosa])
+        return accumulator
+      },
+      result: accumulator => {
+        if (!accumulator)
+          return undefined
+        return '__JSON' + JSON.stringify(accumulator)
+      }
+    })
+
     that.db = db
 
     // Initialize the thread pool used to run async functions
@@ -236,7 +257,7 @@ export default {
     db.prepare('INSERT INTO smtconfig (data) VALUES (?)').run(JSON.stringify(smtConfig))
 
     const sqlFieldsAndTypes = fieldsList.map(f => fId2SqlId(f.id) + ' ' + fType2SqlType(f.type)).join(', ')
-    db.prepare('CREATE TABLE features (geometry TEXT, geogroup_id TEXT, area REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE TABLE features (geometry TEXT, geogroup_id TEXT, area REAL, geocap_x REAL, geocap_y REAL, geocap_z REAL, geocap_cosa REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
     db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
 
     db.prepare('CREATE TABLE subfeatures (id INT, geometry TEXT, geometry_rot TEXT, healpix_index INT, geogroup_id TEXT, area REAL, ' + sqlFieldsAndTypes + ')').run()
@@ -329,12 +350,17 @@ export default {
         _.assign(subF, sqlValues)
       }
       feature.properties = origProperties
+      const bCap = geo_utils.featureBoundingCap(feature)
 
       const f = {
         geogroup_id: feature.geogroup_id,
         properties: '__JSON' + JSON.stringify(feature.properties),
         geometry: '__JSON' + JSON.stringify(feature.geometry),
-        area: area
+        area: area,
+        geocap_x: bCap[0],
+        geocap_y: bCap[1],
+        geocap_z: bCap[2],
+        geocap_cosa: bCap[3]
       }
       _.assign(f, sqlValues)
 
@@ -342,7 +368,7 @@ export default {
     })
 
     // Prepare SQL insertion commands
-    const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+    const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @geocap_x, @geocap_y, @geocap_z, @geocap_cosa, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
     const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @geometry_rot, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
     // Perform SQL transaction
     const insertMany = db.transaction(function (allF) {
@@ -460,6 +486,8 @@ export default {
           selectClause += 'MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
         } else if (agOpt.operation === 'GEO_UNION_AREA') {
           agOpt.postProcessData = that.computeArea(q)
+        } else if (agOpt.operation === 'GEO_BOUNDING_CAP') {
+          selectClause += 'GEO_BOUNDING_CAP(geocap_x, geocap_y, geocap_z, geocap_cosa) as ' + agOpt.out
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           const fid = fId2SqlId(agOpt.fieldId)
           const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
