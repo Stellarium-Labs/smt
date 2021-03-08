@@ -10,15 +10,16 @@
 Module.afterInit(function() {
   if (!Module.canvas) return;
 
-  var prevTimestamp;
+  // XXX: remove this I guess.
   var mouseDown = false;
+  var mouseButtons = 0;
   var mousePos;
 
   // Function called at each frame
   var render = function(timestamp) {
 
     if (mouseDown)
-      Module._core_on_mouse(0, 1, mousePos.x, mousePos.y);
+      Module._core_on_mouse(0, 1, mousePos.x, mousePos.y, mouseButtons);
 
     // Check for canvas resize
     var canvas = Module.canvas;
@@ -39,21 +40,9 @@ Module.afterInit(function() {
       canvas.height = displayHeight * dpr;
     }
 
-    if (!prevTimestamp)
-      prevTimestamp = timestamp;
-    var dt = timestamp - prevTimestamp;
-    prevTimestamp = timestamp;
-
-    if (Module.onBeforeRendering)
-      Module.onBeforeRendering(timestamp)
-
-    // TODO: combine those calls
-    Module._core_update_fov(dt / 1000)
-    Module._core_observer_update();
-
     // TODO: manage paning and flicking here
 
-    Module._core_update(dt / 1000);
+    Module._core_update();
     Module._core_render(displayWidth, displayHeight, dpr);
 
     window.requestAnimationFrame(render)
@@ -86,13 +75,14 @@ Module.afterInit(function() {
       fixPageXY(e);
       mouseDown = true;
       mousePos = getMousePos(e);
+      mouseButtons = e.buttons;
 
       document.onmouseup = function(e) {
         e = e || event;
         fixPageXY(e);
         mouseDown = false;
         mousePos = getMousePos(e);
-        Module._core_on_mouse(0, 0, mousePos.x, mousePos.y);
+        Module._core_on_mouse(0, 0, mousePos.x, mousePos.y, mouseButtons);
       };
       document.onmouseleave = function(e) {
         mouseDown = false;
@@ -160,6 +150,12 @@ Module.afterInit(function() {
     };
     canvas.addEventListener('mousewheel', onWheelEvent, {passive: false});
     canvas.addEventListener('DOMMouseScroll', onWheelEvent, {passive: false});
+
+    canvas.oncontextmenu = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
   };
 
   setupMouse();

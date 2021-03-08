@@ -244,12 +244,6 @@ void core_release(void)
 }
 
 EMSCRIPTEN_KEEPALIVE
-void core_observer_update()
-{
-    observer_update(core->observer, true);
-}
-
-EMSCRIPTEN_KEEPALIVE
 void core_set_view_offset(double center_y_offset)
 {
     double pix_angular_size;
@@ -615,12 +609,12 @@ int core_render(double win_w, double win_h, double pixel_scale)
 }
 
 EMSCRIPTEN_KEEPALIVE
-void core_on_mouse(int id, int state, double x, double y)
+void core_on_mouse(int id, int state, double x, double y, int buttons)
 {
     obj_t *module;
     DL_FOREACH(core->obj.children, module) {
         if (module->klass->on_mouse) {
-            module->klass->on_mouse(module, id, state, x, y);
+            module->klass->on_mouse(module, id, state, x, y, buttons);
         };
     }
 }
@@ -1068,6 +1062,7 @@ static obj_klass_t core_klass = {
                  MEMBER(core_t, flip_view_horizontal)),
         PROPERTY(mount_frame, TYPE_ENUM, MEMBER(core_t, mount_frame)),
         PROPERTY(on_click, TYPE_FUNC, MEMBER(core_t, on_click)),
+        PROPERTY(on_rect, TYPE_FUNC, MEMBER(core_t, on_rect)),
         PROPERTY(time_animation_target, TYPE_MJD,
                  MEMBER(core_t, time_animation.dst_utc)),
         PROPERTY(time_speed, TYPE_FLOAT, MEMBER(core_t, time_speed)),

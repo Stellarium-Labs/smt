@@ -159,6 +159,8 @@ struct core
     // Click callback that can be set by the client.  If it returns true,
     // the event is canceled (no selection is made).
     bool (*on_click)(double x, double y);
+    // Callback called if we do a rectangle selection.
+    bool (*on_rect)(double x1, double y1, double x2, double y2);
 
     // List of running tasks.
     task_t *tasks;
@@ -204,23 +206,6 @@ void core_release(void);
 int core_update(void);
 
 /*
- * Function: core_update_fov
- * Update the core fov animation.
- *
- * Should be called before core_update
- *
- * Parameters:
- *   dt     - Time increment from last frame (sec).
- */
-void core_update_fov(double dt);
-
-/*
- * Function: core_observer_update
- * Update the observer.
- */
-void core_observer_update();
-
-/*
  * Function: core_set_view_offset
  * Update the view center vertical offset.
  *
@@ -232,7 +217,7 @@ void core_set_view_offset(double center_y_offset);
 
 int core_render(double win_w, double win_h, double pixel_scale);
 // x and y in screen coordinates.
-void core_on_mouse(int id, int state, double x, double y);
+void core_on_mouse(int id, int state, double x, double y, int buttons);
 void core_on_key(int key, int action);
 void core_on_char(uint32_t c);
 void core_on_zoom(double zoom, double x, double y);
