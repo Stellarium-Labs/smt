@@ -548,6 +548,10 @@ export default {
         console.assert(agOpt.out)
         if (agOpt.operation === 'COUNT') {
           selectClause.push('COUNT(*) as ' + agOpt.out)
+        } else if (agOpt.operation === 'MIN') {
+          selectClause.push('MIN(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
+        } else if (agOpt.operation === 'MAX') {
+          selectClause.push('MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
         } else if (agOpt.operation === 'VALUES_AND_COUNT') {
           selectClause.push('VALUES_AND_COUNT(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
         } else if (agOpt.operation === 'MIN_MAX') {
