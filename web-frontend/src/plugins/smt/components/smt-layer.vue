@@ -187,8 +187,8 @@ export default {
         const d = [cap[0], cap[1], cap[2]]
         const pos = that.$stel.convertFrame(that.$stel.core.observer, 'ICRF', 'MOUNT', d)
         const fov = Math.acos(cap[3]) * 2
-        that.$stel.lookAt(pos, 0)
-        that.$stel.zoomTo(fov * 1.5, 0)
+        that.$stel.lookAt(pos, 0.5)
+        that.$stel.zoomTo(fov * 1.5, 0.5)
         // const radec = that.$stel.c2s(d)
         // const ra = that.$stel.anp(radec[0]) * 180 / Math.PI
         // const dec = that.$stel.anpm(radec[1]) * 180 / Math.PI
