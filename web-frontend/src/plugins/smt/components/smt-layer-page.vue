@@ -91,6 +91,12 @@ export default {
       }
       return false
     })
+    this.$stel.on('rectSelection', e => {
+      for (let i = 0; i < this.clickCallbacks.length; i++) {
+        if (this.clickCallbacks[i](e)) return true
+      }
+      return false
+    })
   },
   components: { SmtPanelRootToolbar, SmtLayer, draggable }
 }

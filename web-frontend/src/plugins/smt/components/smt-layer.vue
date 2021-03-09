@@ -491,8 +491,8 @@ export default {
     onClick: function (e) {
       if (!this.current) return false
       if (!this.geojsonObj) return false
-      // Get the list of features indices at click position
-      const r = this.geojsonObj.queryRenderedFeatures(e.point)
+      // Get the list of features indices at click/rect position
+      const r = this.geojsonObj.queryRenderedFeatures(e.point || e.rect)
       let someFeatureHaveNoGeogroupId = false
       r.forEach(f => { someFeatureHaveNoGeogroupId ||= (f.geogroup_id === undefined) })
       if (r.length && r[0].geogroup_id && !someFeatureHaveNoGeogroupId) {
