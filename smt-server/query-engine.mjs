@@ -560,7 +560,7 @@ export default {
     }
 
     const postProcessAggResultLine = function (line) {
-      postProcessSQLiteResult(line)
+
       for (let i in q.aggregationOptions) {
         const agOpt = q.aggregationOptions[i]
         if (agOpt.operation === 'GEO_UNION_AREA') {
@@ -634,7 +634,8 @@ export default {
     }
     for (let i in res) {
       // Post-process each resulting line
-      postProcessAggResultLine(res[i])
+      postProcessSQLiteResult(res[i])
+      if (q.aggregationOptions) postProcessAggResultLine(res[i])
     }
     return { q: q, res: res }
   },
