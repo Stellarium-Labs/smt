@@ -451,6 +451,69 @@ export default {
     return whereClause
   },
 
+  getDateMinMaxStep: function (q, fieldId, minSteps) {
+    let whereClause = this.constraints2SQLWhereClause(q.constraints)
+    const fid = fId2SqlId(fieldId)
+    const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
+    const req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax FROM features ' + wc
+    const res = this.db.prepare(req).get()
+    postProcessSQLiteResult(res)
+    let start = new Date(res.dmin)
+    start.setUTCHours(0, 0, 0, 0)
+    // Switch to next day and truncate
+    let stop = new Date(res.dmax + 1000 * 60 * 60 * 24)
+    stop.setUTCHours(23, 59, 59, 0)
+    // Range in days
+    let range = (stop - start) / (1000 * 60 * 60 * 24)
+    let step = '%Y-%m-%d'
+    if (range > minSteps * 365) {
+      step = '%Y'
+    } else if (range > minSteps * 30) {
+      step = '%Y-%m'
+    }
+
+    // Adjust min max so that they fall on an integer number of month/year
+    if (step === '%Y-%m-%d') {
+      // Min max already OK
+    } else if (step === '%Y-%m') {
+      start.setUTCDate(1)
+      stop.setUTCMonth(stop.getUTCMonth() + 1, 0)
+    } else if (step === '%Y') {
+      start.setUTCDate(1)
+      start.setUTCMonth(0)
+      stop.setUTCFullYear(stop.getUTCFullYear(), 11, 31)
+    }
+    if (res.dmin === res.dmax) stop = start
+
+    return {
+      min: start,
+      max: stop,
+      step: step
+    }
+  },
+
+  getNumberMinMaxStep: function (q, fieldId, nbCol) {
+    let whereClause = this.constraints2SQLWhereClause(q.constraints)
+    const fid = fId2SqlId(fieldId)
+    const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
+    const req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax FROM features ' + wc
+    const res = this.db.prepare(req).get()
+    postProcessSQLiteResult(res)
+    let step = 1
+    if (res.dmin === res.dmax) {
+      if (res.dmin === null) res.dmin = undefined
+      if (res.dmax === null) res.dmax = undefined
+    } else {
+      step = (res.dmax - res.dmin) / nbCol
+    }
+
+    return {
+      min: res.dmin,
+      max: res.dmax,
+      step: step
+    }
+  },
+
   // Query the engine
   query: function (q) {
     let that = this
@@ -494,70 +557,19 @@ export default {
         } else if (agOpt.operation === 'GEO_BOUNDING_CAP') {
           selectClause.push('GEO_BOUNDING_CAP(geocap_x, geocap_y, geocap_z, geocap_cosa) as ' + agOpt.out)
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
+          const res = that.getDateMinMaxStep(q, agOpt.fieldId, 3)
           const fid = fId2SqlId(agOpt.fieldId)
-          const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
-          const req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
-          const res = that.db.prepare(req).get()
-          postProcessSQLiteResult(res)
-          let start = new Date(res.dmin)
-          start.setUTCHours(0, 0, 0, 0)
-          // Switch to next day and truncate
-          let stop = new Date(res.dmax + 1000 * 60 * 60 * 24)
-          stop.setUTCHours(23, 59, 59, 0)
-          // Range in days
-          let range = (stop - start) / (1000 * 60 * 60 * 24)
-          let step = '%Y-%m-%d'
-          if (range > 3 * 365) {
-            step = '%Y'
-          } else if (range > 3 * 30) {
-            step = '%Y-%m'
-          }
-
-          // Adjust min max so that they fall on an integer number of month/year
-          if (step === '%Y-%m-%d') {
-            // Min max already OK
-          } else if (step === '%Y-%m') {
-            start.setUTCDate(1)
-            stop.setUTCMonth(stop.getUTCMonth() + 1, 0)
-          } else if (step === '%Y') {
-            start.setUTCDate(1)
-            start.setUTCMonth(0)
-            stop.setUTCFullYear(stop.getUTCFullYear(), 11, 31)
-          }
-          if (res.dmin === res.dmax) stop = start
-
-          selectClause.push('VALUES_AND_COUNT(' + 'STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') AS ' + agOpt.out)
-
-          agOpt.postProcessData = {
-            min: start,
-            max: stop,
-            step: step,
-            table: [['Date', 'Count']]
-          }
-
+          selectClause.push('VALUES_AND_COUNT(' + 'STRFTIME(\'' + res.step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') AS ' + agOpt.out)
+          res.table = [['Date', 'Count']]
+          agOpt.postProcessData = res
         } else if (agOpt.operation === 'NUMBER_HISTOGRAM') {
           const fid = fId2SqlId(agOpt.fieldId)
-          const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
-          const req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax ' + fromClause + wc
-          const res = that.db.prepare(req).get()
-          postProcessSQLiteResult(res)
-          let step = 1
-          if (res.dmin === res.dmax) {
-            if (res.dmin === null) res.dmin = undefined
-            if (res.dmax === null) res.dmax = undefined
-          } else {
-            step = (res.dmax - res.dmin) / 10
-          }
-
-          const qmin = res.dmin !== undefined ? res.dmin : 0
-          selectClause.push('VALUES_AND_COUNT(' + 'ROUND((' + fid + ' - ' + qmin + ') / ' + step + ') * ' + step + ' + ' + qmin + ') AS ' + agOpt.out)
-          agOpt.postProcessData = {
-            noval: 0,
-            min: res.dmin,
-            max: res.dmax,
-            step: step,
-            table: [['Value', 'Count']]
-          }
+          const res= that.getNumberMinMaxStep(q, agOpt.fieldId, 10)
+          const qmin = res.min !== undefined ? res.min : 0
+          selectClause.push('VALUES_AND_COUNT(' + 'ROUND((' + fid + ' - ' + qmin + ') / ' + res.step + ') * ' + res.step + ' + ' + qmin + ') AS ' + agOpt.out)
+          res.noval = 0
+          res.table = [['Value', 'Count']]
+          agOpt.postProcessData = res
         } else {
           throw new Error('Unsupported aggregation operation: ' + agOpt.operation)
         }
