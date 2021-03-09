@@ -539,8 +539,21 @@ export default {
 
       console.assert(q.groupingOptions.length === 1)
       if (q.groupingOptions[0].operation === 'GROUP_ALL') {}
-      if (q.groupingOptions[0].operation === 'GROUP_BY') {
+      else if (q.groupingOptions[0].operation === 'GROUP_BY') {
         whereClause += ' GROUP BY ' + q.groupingOptions[0].fieldId + ' '
+      } else if (q.groupingOptions[0].operation === 'GROUP_BY_DATE') {
+        const fid = fId2SqlId(q.groupingOptions[0].fieldId)
+        if (!q.groupingOptions[0].step) {
+          throw new Error('GROUP_BY_DATE grouping operation require a step parameter')
+        }
+        const step = {
+          'year': '%Y',
+          'month': '%Y-%m',
+          'day': '%Y-%m-%d'
+        }[q.groupingOptions[0].step]
+        whereClause += ' GROUP BY STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\') '
+      } else {
+        throw new Error('Unsupported grouping operation: ' + q.groupingOptions[0].operation)
       }
 
       for (let i in q.aggregationOptions) {
@@ -651,7 +664,6 @@ export default {
     let res = [{}]
     if (selectClause.length) {
       const sqlStatement = 'SELECT ' + selectClause.join(', ') + ' ' + fromClause + whereClause
-      console.log(sqlStatement)
       res = that.db.prepare(sqlStatement).all()
     }
     for (let i in res) {
