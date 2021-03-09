@@ -464,30 +464,35 @@ export default {
     }
 
     // Construct the SQL SELECT clause matching the given aggregate options
-    let selectClause = 'SELECT '
+    let selectClause = []
     if (q.projectOptions) {
-      selectClause += Object.keys(q.projectOptions).map(k => fId2SqlId(k)).join(', ')
+      selectClause = Object.keys(q.projectOptions).map(k => fId2SqlId(k))
     }
 
-    const fromClause = ' FROM features'
+    let fromClause = ' FROM features'
 
     if (q.aggregationOptions) {
       assert(!q.projectOptions)
-      // We can't do much more than group all using SQL language
-      console.assert(q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_ALL')
+
+      console.assert(q.groupingOptions.length === 1)
+      if (q.groupingOptions[0].operation === 'GROUP_ALL') {}
+      if (q.groupingOptions[0].operation === 'GROUP_BY') {
+        whereClause += ' GROUP BY ' + q.groupingOptions[0].fieldId + ' '
+      }
+
       for (let i in q.aggregationOptions) {
         const agOpt = q.aggregationOptions[i]
         console.assert(agOpt.out)
         if (agOpt.operation === 'COUNT') {
-          selectClause += 'COUNT(*) as ' + agOpt.out
+          selectClause.push('COUNT(*) as ' + agOpt.out)
         } else if (agOpt.operation === 'VALUES_AND_COUNT') {
-          selectClause += 'VALUES_AND_COUNT(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
+          selectClause.push('VALUES_AND_COUNT(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
         } else if (agOpt.operation === 'MIN_MAX') {
-          selectClause += 'MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out
+          selectClause.push('MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
         } else if (agOpt.operation === 'GEO_UNION_AREA') {
           agOpt.postProcessData = that.computeArea(q)
         } else if (agOpt.operation === 'GEO_BOUNDING_CAP') {
-          selectClause += 'GEO_BOUNDING_CAP(geocap_x, geocap_y, geocap_z, geocap_cosa) as ' + agOpt.out
+          selectClause.push('GEO_BOUNDING_CAP(geocap_x, geocap_y, geocap_z, geocap_cosa) as ' + agOpt.out)
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           const fid = fId2SqlId(agOpt.fieldId)
           const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
@@ -521,7 +526,7 @@ export default {
           }
           if (res.dmin === res.dmax) stop = start
 
-          selectClause += 'VALUES_AND_COUNT(' + 'STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') AS ' + agOpt.out
+          selectClause.push('VALUES_AND_COUNT(' + 'STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') AS ' + agOpt.out)
 
           agOpt.postProcessData = {
             min: start,
@@ -545,7 +550,7 @@ export default {
           }
 
           const qmin = res.dmin !== undefined ? res.dmin : 0
-          selectClause += 'VALUES_AND_COUNT(' + 'ROUND((' + fid + ' - ' + qmin + ') / ' + step + ') * ' + step + ' + ' + qmin + ') AS ' + agOpt.out
+          selectClause.push('VALUES_AND_COUNT(' + 'ROUND((' + fid + ' - ' + qmin + ') / ' + step + ') * ' + step + ' + ' + qmin + ') AS ' + agOpt.out)
           agOpt.postProcessData = {
             noval: 0,
             min: res.dmin,
@@ -628,8 +633,9 @@ export default {
     }
 
     let res = [{}]
-    if (selectClause !== 'SELECT ') {
-      const sqlStatement = selectClause + fromClause + whereClause
+    if (selectClause.length) {
+      const sqlStatement = 'SELECT ' + selectClause.join(', ') + ' ' + fromClause + whereClause
+      console.log(sqlStatement)
       res = that.db.prepare(sqlStatement).all()
     }
     for (let i in res) {
