@@ -189,18 +189,6 @@ export default {
         const fov = Math.acos(cap[3]) * 2
         that.$stel.lookAt(pos, 0.5)
         that.$stel.zoomTo(fov * 1.5, 0.5)
-        // const radec = that.$stel.c2s(d)
-        // const ra = that.$stel.anp(radec[0]) * 180 / Math.PI
-        // const dec = that.$stel.anpm(radec[1]) * 180 / Math.PI
-        // const shapeParams = {
-        //   pos: [d[0], d[1], d[2], 0],
-        //   frame: that.$stel.FRAME_ICRF,
-        //   size: [fov, fov],
-        //   color: [0.0, 0.0, 0.5, 0.12],
-        //   border_color: [0.1, 0.1, 0.6, 1]
-        // }
-        // if (that.cap) that.$observingLayer.remove(that.cap)
-        // that.cap = that.$observingLayer.add('circle', shapeParams)
       })
     },
     refreshObservationsInSky: function () {
