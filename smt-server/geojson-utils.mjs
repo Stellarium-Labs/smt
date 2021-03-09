@@ -278,6 +278,7 @@ export default {
             // we still need to re-combine the features falling on the same
             // healpix pixel
             spl.forEach(f => {
+              if (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon') return
               that.normalizeGeoJson(f)
               if (f.healpix_index in ret) {
                 try {
