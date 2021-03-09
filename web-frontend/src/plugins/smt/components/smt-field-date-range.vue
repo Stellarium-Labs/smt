@@ -48,9 +48,6 @@ export default {
       dateMask: '####-##-##',
       dateRangeSliderValues: [0, 1],
       dateRangeChartOptions: {
-        chart: {
-          title: 'Date Range'
-        },
         legend: { position: 'none' },
         backgroundColor: '#212121',
         annotations: {
