@@ -17,8 +17,8 @@
       <span class="px-2 grey--text">Analysis of {{ name }}</span>
       <v-spacer></v-spacer>
     </v-toolbar>
-    <div class="scroll-container">
-      <v-container class="pt-0" style="height: 1000px">
+    <div class="scroll-container" style="height: calc(100% - 48px)">
+      <v-container class="pt-0">
         <smt-histogram class="mb-2" v-for="fr in results.fields" :key="fr.field.id" :data='fr'>{{ fr.table }}</smt-histogram>
       </v-container>
     </div>

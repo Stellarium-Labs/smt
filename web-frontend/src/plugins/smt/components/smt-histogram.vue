@@ -48,6 +48,7 @@ export default {
       return {
         title: this.data ? this.data.field.id : '',
         titleTextStyle: { color: 'white' },
+        chartArea: { left: '5%', width: '80%' },
         backgroundColor: '#212121',
         legend: { textStyle: { color: '#b2b2b2' } },
         hAxis: {
