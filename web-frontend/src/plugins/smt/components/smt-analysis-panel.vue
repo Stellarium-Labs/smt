@@ -99,7 +99,7 @@ export default {
           return
         }
 
-        const minSteps = 10
+        const minSteps = 20
         const start = new Date(minmax[0])
         start.setUTCHours(0, 0, 0, 0)
         // Switch to next day and truncate
