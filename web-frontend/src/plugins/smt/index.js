@@ -62,6 +62,7 @@ export default {
     app.$store.commit('setValue', { varName: 'showConstellationsArtButton', newValue: false })
     app.$store.commit('setValue', { varName: 'showPlanetsVisibilityMenuItem', newValue: false })
     app.$store.commit('setValue', { varName: 'showViewSettingsMenuItem', newValue: false })
+    app.$store.commit('setValue', { varName: 'showObservingPanelTabsButtons', newValue: false })
 
     // Add all data sources.
     const doUrl = 'https://stellarium.sfo2.cdn.digitaloceanspaces.com/'
