@@ -37,7 +37,7 @@ export default {
     return {
     }
   },
-  props: ['data', 'cumulative'],
+  props: ['data', 'cumulative', 'showItemsWithoutDate'],
   methods: {
     formatDate: function (d, step) {
       if (step === 'day') return new Moment(d).format('YYYY-MM-DD')
@@ -50,7 +50,11 @@ export default {
     histoData: function () {
       if (this.data) {
         const newData = _.cloneDeep(this.data)
+        if (!this.showItemsWithoutDate) {
+          newData.table = newData.table.filter(l => l[0] !== null)
+        }
 
+        newData.table[0] = newData.table[0].map(s => s === '__undefined' ? 'Undefined' : s)
         // Compute cumulative values
         if (this.cumulative) {
           let acc
@@ -60,18 +64,11 @@ export default {
                 acc[j] += newData.table[i][j] || 0
               }
             } else {
-              acc = newData.table[i]
+              acc = _.cloneDeep(newData.table[i]).map(e => e || 0)
             }
             acc[0] = newData.table[i][0]
             newData.table[i] = _.cloneDeep(acc)
           }
-        }
-
-        if (newData.table.length) {
-          // newData.table[0].push({ role: 'annotation' })
-        }
-        for (let i = 1; i < newData.table.length; ++i) {
-          // newData.table[i].push('' + newData.table[i][1])
         }
         return newData
       }

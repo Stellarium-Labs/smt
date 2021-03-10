@@ -23,12 +23,13 @@
         <v-row>
           <v-col cols="5">
             <v-switch class="pt-0 pb-0 mt-0" dense v-model="cumulative" label="Cumulative"></v-switch>
+            <!--<v-switch class="pt-0 pb-0 mt-0" dense v-model="showItemsWithoutDate" :disabled='!cumulative' :label="'Include items without ' + referenceField.name"></v-switch>-->
           </v-col>
           <v-col cols="7">
             <span>Time serie for field </span>
             <v-menu close-on-click>
               <template v-slot:activator="{ on, attrs }">
-                <v-btn x-small text elevation="3" dark v-bind="attrs" v-on="on">{{referenceField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
+                <v-btn x-small text elevation="3" dark v-bind="attrs" v-on="on"> {{ referenceField.name }} <v-icon right>mdi-menu-down</v-icon></v-btn>
               </template>
               <v-list>
                 <v-list-item v-for="(item, index) in $smt.fields.filter(f => f.type === 'date')" :key="index" @click="referenceField = item">
@@ -38,7 +39,7 @@
             </v-menu>
           </v-col>
         </v-row>
-        <smt-histogram class="mb-0" v-for="fr in results.fields" :key="fr.field.id" :data='fr' :cumulative='cumulative'>{{ fr.table }}</smt-histogram>
+        <smt-histogram class="mb-0" v-for="fr in results.fields" :key="fr.field.id" :data='fr' :cumulative="cumulative" :showItemsWithoutDate="showItemsWithoutDate">{{ fr.table }}</smt-histogram>
       </v-container>
     </div>
 
@@ -53,6 +54,7 @@ export default {
   data: function () {
     return {
       cumulative: true,
+      showItemsWithoutDate: true,
       inProgress: false,
       referenceField: this.$smt.fields.find(f => f.id === 'CreationDate') || this.$smt.fields[0].id,
       results: {
@@ -129,7 +131,8 @@ export default {
           }
         }
         qe.query(q).then(res => {
-          const lines = res.res.filter(l => !!l.x)
+          // const lineWithUndefinedDate = res.res.find(l => l.x === null)
+          const lines = res.res // .filter(l => !!l.x)
           for (const i in lines) {
             const d = new Date(lines[i].x)
             d.setUTCHours(0, 0, 0, 0)
@@ -139,7 +142,9 @@ export default {
               d.setUTCMonth(0)
             }
             // Only keep the UTC date, skip the time
-            lines[i].x = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+            if (lines[i].x !== null) {
+              lines[i].x = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+            }
           }
           that.results.fields.push({
             field: { id: 'count', name: 'Count' },
