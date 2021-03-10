@@ -28,7 +28,6 @@
 <script>
 import qe from '../query-engine'
 import SmtHistogram from './smt-histogram.vue'
-// import Vue from 'vue'
 
 export default {
   data: function () {

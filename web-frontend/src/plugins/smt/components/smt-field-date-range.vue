@@ -13,7 +13,7 @@
   <v-col cols="12">
     <v-row no-gutters>
       <v-col cols="12">
-        <GChart type="ColumnChart" :data="fieldResultsData.table" :options="dateRangeChartOptions"  style="margin-bottom: -10px; height: 120px"/>
+        <GChart type="ColumnChart" :data="fieldResultsData.table" :options="dateRangeChartOptions" style="margin-bottom: -10px; height: 120px"/>
       </v-col>
       <v-col cols="12">
         <v-range-slider hide-details class="px-3 my-0" v-model="dateRangeSliderValues" :min="dateRange[0]" :max="dateRange[1]" v-on:start="isUserDragging = true" v-on:end="isUserDragging = false"></v-range-slider>
