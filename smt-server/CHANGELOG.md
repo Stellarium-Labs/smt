@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2] - 2021-03-10
+- Add inital analysis panel
+- Enable multiple selection in an area (right click)
+- Animate fit to view
+- The engine can now process multiple aggregations in a single query
+- Add MIN, MAX and GROUP_BY_DATE aggregation operation
+
 ## [0.3.1] - 2021-03-08
 - Add bounding cap aggregation to get the bounding cap for a layer
 - Add a switch button to auto-fit the view to the layer's content
