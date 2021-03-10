@@ -114,8 +114,8 @@ export default {
             d.setUTCHours(0, 0, 0, 0)
             if (step === 'month') d.setUTCDate(1)
             if (step === 'year') {
-              start.setUTCDate(1)
-              start.setUTCMonth(0)
+              d.setUTCDate(1)
+              d.setUTCMonth(0)
             }
             lines[i].x = d
           }
