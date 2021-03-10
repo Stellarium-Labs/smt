@@ -17,7 +17,7 @@
       <draggable v-model="layersList">
         <v-chip v-for="layer in layersList" :key="layer.id" color="#262626" close draggable close-icon="mdi-close" class="chip-tab-inactive" label @click:close="delLayer(layer.id)">{{ layer.name }}</v-chip>
       </draggable>
-      <v-btn icon class="transparent" @click.stop="addLayer()" style="margin-left: 0px; margin-top: 3px;"><v-icon>mdi-plus</v-icon></v-btn>
+      <v-btn icon class="transparent" @click.stop="addLayer()" style="margin-left: 0px; margin-top: 0px;"><v-icon>mdi-plus</v-icon></v-btn>
     </v-chip-group>
     <div style="height: calc(100% - 38px - 48px);">
       <v-tabs-items v-model="tab" style="height: 100%;">

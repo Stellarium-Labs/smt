@@ -10,13 +10,14 @@
 // funding from the Centre national d'études spatiales (CNES).
 
 <template>
-  <div style="height: 100%; width: 100%; background-color: #212121;">
+  <div style="background-color: #212121;">
     <v-toolbar dense class="obspanel-toolbar">
-      <v-btn icon class="transparent" @click.stop=""><v-icon>mdi-close</v-icon></v-btn>
       <v-spacer></v-spacer>
       <span class="px-2 grey--text">Analysis of {{ name }}</span>
       <v-spacer></v-spacer>
+      <v-btn icon class="transparent" @click.stop="requestClose"><v-icon>mdi-close</v-icon></v-btn>
     </v-toolbar>
+    <v-progress-circular v-if="inProgress" size=50 indeterminate style="position: absolute; margin-left: calc(50% - 25px); margin-top: calc(50vh - 25px); z-index: 1000;"></v-progress-circular>
     <div class="scroll-container" style="height: calc(100% - 48px); width: 100%">
       <v-container class="mr-0">
         <v-row>
@@ -24,12 +25,23 @@
             <v-switch class="pt-0 pb-0 mt-0" dense v-model="cumulative" label="Cumulative"></v-switch>
           </v-col>
           <v-col cols="7">
-            <span>Time serie for field {{ referenceFieldId }}</span>
+            <span>Time serie for field </span>
+            <v-menu close-on-click>
+              <template v-slot:activator="{ on, attrs }">
+                <v-btn x-small text elevation="3" dark v-bind="attrs" v-on="on">{{referenceField.name}} <v-icon right>mdi-menu-down</v-icon></v-btn>
+              </template>
+              <v-list>
+                <v-list-item v-for="(item, index) in $smt.fields.filter(f => f.type === 'date')" :key="index" @click="referenceField = item">
+                  <v-list-item-title>{{ item.name }}</v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-menu>
           </v-col>
         </v-row>
         <smt-histogram class="mb-0" v-for="fr in results.fields" :key="fr.field.id" :data='fr' :cumulative='cumulative'>{{ fr.table }}</smt-histogram>
       </v-container>
     </div>
+
   </div>
 </template>
 
@@ -41,6 +53,8 @@ export default {
   data: function () {
     return {
       cumulative: true,
+      inProgress: false,
+      referenceField: this.$smt.fields.find(f => f.id === 'CreationDate') || this.$smt.fields[0].id,
       results: {
         summary: {
           count: 0,
@@ -50,20 +64,25 @@ export default {
       }
     }
   },
-  props: ['name', 'constraints', 'referenceFieldId'],
+  props: ['name', 'constraints'],
   watch: {
     constraints: function () {
-      // console.log(this.constraints)
+      this.refreshAllFields()
+    },
+    referenceField: function () {
       this.refreshAllFields()
     }
   },
   methods: {
+    requestClose: function () {
+      this.$emit('request-close')
+    },
     refreshMinMax: function () {
       // Compute min/max for the field used to split the horizontal axis
       const q = {
         constraints: this.constraints,
         groupingOptions: [{ operation: 'GROUP_ALL' }],
-        aggregationOptions: [{ operation: 'MIN_MAX', fieldId: this.referenceFieldId, out: 'minmax' }]
+        aggregationOptions: [{ operation: 'MIN_MAX', fieldId: this.referenceField.id, out: 'minmax' }]
       }
       return qe.query(q).then(res => {
         return res.res[0].minmax
@@ -72,9 +91,11 @@ export default {
 
     refreshAllFields: function () {
       const that = this
+      that.inProgress = true
       that.refreshMinMax().then(function (minmax) {
         that.results.fields = []
         if (!minmax || minmax[0] === minmax[1]) {
+          that.inProgress = false
           return
         }
 
@@ -95,10 +116,10 @@ export default {
 
         const q = {
           constraints: that.constraints,
-          groupingOptions: [{ operation: 'GROUP_BY_DATE', fieldId: that.referenceFieldId, step: step }],
+          groupingOptions: [{ operation: 'GROUP_BY_DATE', fieldId: that.referenceField.id, step: step }],
           aggregationOptions: [
             { operation: 'COUNT', out: 'count' },
-            { operation: 'MIN', fieldId: that.referenceFieldId, out: 'x' }
+            { operation: 'MIN', fieldId: that.referenceField.id, out: 'x' }
           ]
         }
         for (const i in that.$smt.fields) {
@@ -139,8 +160,10 @@ export default {
               })
             }
           }
+          that.inProgress = false
         }, err => {
           console.log(err)
+          that.inProgress = false
         })
       })
     }

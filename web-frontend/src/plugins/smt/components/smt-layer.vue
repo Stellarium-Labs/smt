@@ -12,6 +12,7 @@
 <template>
   <div style="height: 100%; display: flex; flex-flow: column;">
     <smt-selection-info :selectedFeatures="selectedFootprintData" :query="query" @unselect="unselect()"></smt-selection-info>
+    <v-btn elevation="2" fab small color="secondary" style="position: absolute; margin-left: -50px" @click="showAnalysisPanel = true"><v-icon>mdi-chart-areaspline</v-icon></v-btn>
     <v-card tile color="#424242">
       <v-card-text style="padding-top: 8px;">
         <v-row no-gutters>
@@ -67,14 +68,6 @@
             </v-chip>
           </div>
         </v-row>
-        <v-row no-gutters>
-          <v-col cols="2"><div style="padding-top: 7px;">Analysis</div></v-col>
-          <v-col cols="1">
-            <v-switch style="margin-top: 0;" dense v-model="showAnalysisPanel"></v-switch>
-          </v-col>
-          <v-col cols="1"></v-col>
-          <v-col cols="8"></v-col>
-        </v-row>
       </v-card-text>
     </v-card>
     <div class="scroll-container">
@@ -86,7 +79,7 @@
       </v-container>
     </div>
     <div v-if="showAnalysisPanel" style="position: absolute; margin-left: calc(-100vw + 100%); width: calc(100vw - 100%); height: 100vh; margin-top: -86px; z-index: 100;">
-      <smt-analysis-panel style="height: 100%;" class="get-click" :name="name" :constraints="query.constraints" referenceFieldId="CreationDate"></smt-analysis-panel>
+      <smt-analysis-panel style="height: 100vh;" class="get-click" :name="name" :constraints="query.constraints" v-on:request-close="showAnalysisPanel = false"></smt-analysis-panel>
     </div>
   </div>
 </template>
