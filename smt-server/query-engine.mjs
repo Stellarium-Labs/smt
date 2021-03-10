@@ -451,6 +451,33 @@ export default {
     return whereClause
   },
 
+  // Construct the SQL GROUP BY clause matching the given groupingOptions
+  groupingOptions2SQLGroupByClause: function (groupingOptions) {
+    if (!groupingOptions || groupingOptions.length === 0) {
+      return ''
+    }
+    console.assert(groupingOptions.length === 1)
+    if (groupingOptions[0].operation === 'GROUP_ALL') {
+      return ''
+    } else if (groupingOptions[0].operation === 'GROUP_BY') {
+      return 'GROUP BY ' + groupingOptions[0].fieldId
+    } else if (groupingOptions[0].operation === 'GROUP_BY_DATE') {
+      const fid = fId2SqlId(groupingOptions[0].fieldId)
+      if (!groupingOptions[0].step) {
+        throw new Error('GROUP_BY_DATE grouping operation require a step parameter')
+      }
+      const step = {
+        'year': '%Y',
+        'month': '%Y-%m',
+        'day': '%Y-%m-%d'
+      }[groupingOptions[0].step]
+      return 'GROUP BY STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\')'
+    } else {
+      throw new Error('Unsupported grouping operation: ' + groupingOptions[0].operation)
+    }
+    return ''
+  },
+
   getDateMinMaxStep: function (q, fieldId, minSteps) {
     let whereClause = this.constraints2SQLWhereClause(q.constraints)
     const fid = fId2SqlId(fieldId)
@@ -537,24 +564,7 @@ export default {
     if (q.aggregationOptions) {
       assert(!q.projectOptions)
 
-      console.assert(q.groupingOptions.length === 1)
-      if (q.groupingOptions[0].operation === 'GROUP_ALL') {}
-      else if (q.groupingOptions[0].operation === 'GROUP_BY') {
-        whereClause += ' GROUP BY ' + q.groupingOptions[0].fieldId + ' '
-      } else if (q.groupingOptions[0].operation === 'GROUP_BY_DATE') {
-        const fid = fId2SqlId(q.groupingOptions[0].fieldId)
-        if (!q.groupingOptions[0].step) {
-          throw new Error('GROUP_BY_DATE grouping operation require a step parameter')
-        }
-        const step = {
-          'year': '%Y',
-          'month': '%Y-%m',
-          'day': '%Y-%m-%d'
-        }[q.groupingOptions[0].step]
-        whereClause += ' GROUP BY STRFTIME(\'' + step + '\', ROUND(' + fid + '/1000), \'unixepoch\') '
-      } else {
-        throw new Error('Unsupported grouping operation: ' + q.groupingOptions[0].operation)
-      }
+      whereClause += ' ' + this.groupingOptions2SQLGroupByClause(q.groupingOptions)
 
       for (let i in q.aggregationOptions) {
         const agOpt = q.aggregationOptions[i]
