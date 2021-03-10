@@ -17,9 +17,17 @@
       <span class="px-2 grey--text">Analysis of {{ name }}</span>
       <v-spacer></v-spacer>
     </v-toolbar>
-    <div class="scroll-container" style="height: calc(100% - 48px)">
-      <v-container class="pt-0">
-        <smt-histogram class="mb-2" v-for="fr in results.fields" :key="fr.field.id" :data='fr'>{{ fr.table }}</smt-histogram>
+    <div class="scroll-container" style="height: calc(100% - 48px); width: 100%">
+      <v-container class="mr-0">
+        <v-row>
+          <v-col cols="5">
+            <v-switch class="pt-0 pb-0 mt-0" dense v-model="cumulative" label="Cumulative"></v-switch>
+          </v-col>
+          <v-col cols="7">
+            <span>Time serie for field {{ referenceFieldId }}</span>
+          </v-col>
+        </v-row>
+        <smt-histogram class="mb-0" v-for="fr in results.fields" :key="fr.field.id" :data='fr' :cumulative='cumulative'>{{ fr.table }}</smt-histogram>
       </v-container>
     </div>
   </div>
@@ -32,6 +40,7 @@ import SmtHistogram from './smt-histogram.vue'
 export default {
   data: function () {
     return {
+      cumulative: true,
       results: {
         summary: {
           count: 0,
@@ -65,7 +74,7 @@ export default {
       const that = this
       that.refreshMinMax().then(function (minmax) {
         that.results.fields = []
-        if (minmax[0] === minmax[1]) {
+        if (!minmax || minmax[0] === minmax[1]) {
           return
         }
 
@@ -100,9 +109,20 @@ export default {
         }
         qe.query(q).then(res => {
           const lines = res.res.filter(l => !!l.x)
+          for (const i in lines) {
+            const d = new Date(lines[i].x)
+            d.setUTCHours(0, 0, 0, 0)
+            if (step === 'month') d.setUTCDate(1)
+            if (step === 'year') {
+              start.setUTCDate(1)
+              start.setUTCMonth(0)
+            }
+            lines[i].x = d
+          }
           that.results.fields.push({
-            field: { id: 'count' },
-            table: [['Date', 'Count']].concat(lines.map(l => [l.x, l.count]))
+            field: { id: 'count', name: 'Count' },
+            table: [['Date', 'Count']].concat(lines.map(l => [l.x, l.count])),
+            step: step
           })
           for (const i in that.$smt.fields) {
             const field = that.$smt.fields[i]
@@ -112,8 +132,9 @@ export default {
               allValues = Array.from(new Set(allValues))
               const vals = lines.map(l => [l.x].concat(allValues.map(k => l[field.id][k])))
               that.results.fields.push({
-                field: { id: field.id },
-                table: [['Date'].concat(allValues)].concat(vals)
+                field: field,
+                table: [['Date'].concat(allValues)].concat(vals),
+                step: step
               })
             }
           }
