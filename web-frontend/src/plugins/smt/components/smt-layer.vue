@@ -505,7 +505,12 @@ export default {
       if (!this.current) return false
       if (!this.geojsonObj) return false
       // Get the list of features indices at click/rect position
-      const r = this.geojsonObj.queryRenderedFeatures(e.point || e.rect)
+      let r = this.geojsonObj.queryRenderedFeatures(e.point || e.rect)
+      // Remove duplicated geogroupid, because they are part of the same feature
+      const featuresByGeogroupId = {}
+      r.forEach(f => { featuresByGeogroupId[f.geogroup_id] = f })
+      r = Object.values(featuresByGeogroupId)
+
       let someFeatureHaveNoGeogroupId = false
       r.forEach(f => { someFeatureHaveNoGeogroupId ||= (f.geogroup_id === undefined) })
       if (r.length && r[0].geogroup_id && !someFeatureHaveNoGeogroupId) {
