@@ -633,7 +633,7 @@ ul {
 }
 /* Handle */
 ::-webkit-scrollbar-thumb {
-  background: #424242;
+  background: #525252;
 }
 /* Handle on hover */
 ::-webkit-scrollbar-thumb:hover {
