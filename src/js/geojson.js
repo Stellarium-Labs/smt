@@ -166,13 +166,12 @@ function asBox(box) {
 
 function surveyQueryRenderedFeatures(obj, box) {
   box = asBox(box)
-  console.log(box)
   const boxPtr = Module._malloc(32);
   Module._setValue(boxPtr +  0, box[0][0], 'double');
   Module._setValue(boxPtr +  8, box[0][1], 'double');
   Module._setValue(boxPtr + 16, box[1][0], 'double');
   Module._setValue(boxPtr + 24, box[1][1], 'double');
-  const size = 128; // Max number of results.
+  const size = 1024; // Max number of results.
   const tilesPtr = Module._malloc(4 * size);
   const indexPtr = Module._malloc(4 * size);
   const nb = Module._geojson_survey_query_rendered_features(
