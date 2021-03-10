@@ -117,7 +117,8 @@ export default {
               d.setUTCDate(1)
               d.setUTCMonth(0)
             }
-            lines[i].x = d
+            // Only keep the UTC date, skip the time
+            lines[i].x = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
           }
           that.results.fields.push({
             field: { id: 'count', name: 'Count' },
