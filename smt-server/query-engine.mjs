@@ -84,10 +84,10 @@ export default {
 
     // Add a custom aggregation operator for the chip tags
     db.aggregate('VALUES_AND_COUNT', {
-      start: () => {},
+      start: undefined,
       step: (accumulator, value) => {
         if (!accumulator) accumulator = {}
-        if (!value) value = '__undefined'
+        if (value === null) value = '__undefined'
         accumulator[value] = (accumulator[value] !== undefined) ? accumulator[value] + 1 : 1
         return accumulator
       },
