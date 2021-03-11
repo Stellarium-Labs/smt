@@ -32,6 +32,7 @@ const fType2SqlType = function (fieldType) {
   if (fieldType === 'string') return 'TEXT'
   if (fieldType === 'date') return 'INT' // Dates are converted to unix time stamp
   if (fieldType === 'number') return 'NUMERIC'
+  if (fieldType === 'int') return 'INT'
   return 'JSON'
 }
 
