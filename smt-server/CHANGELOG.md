@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.3] - 2021-03-11
+- Fix several analysis panel bugs causing data to be missed
+- Add free text search functionality to tags widget
+- Enable Patch ID and Observation ID search
+- Add some date range presets such as "Last 30 days"
+
 ## [0.3.2] - 2021-03-10
 - Add inital analysis panel
 - Enable multiple selection in an area (right click)
