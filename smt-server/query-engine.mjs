@@ -167,6 +167,10 @@ export default {
         accumulator.data.push({area: area, geometry: geometry})
         accumulator.pixelFull = pixelFull
       },
+      inverse: function (accumulator, healpixIndex, geometry, area) {
+        console.log('GEO_UNION_AREA_ON_HEALPIX inverse not implemented')
+        console.assert(0)
+      },
       result: accumulator => {
         if (!accumulator)
           return undefined
