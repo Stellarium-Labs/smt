@@ -88,7 +88,8 @@ export default {
           textStyle: { color: '#b2b2b2' },
           gridlines: { color: '#333' }
         },
-        isStacked: true
+        isStacked: true,
+        focusTarget: 'category'
       }
     }
   },
