@@ -14,7 +14,7 @@
     <v-card style="background: rgba(66, 66, 66, 0.7)">
       <v-btn icon style="position: absolute; right: 0" v-on:click="unselect()"><v-icon>mdi-close</v-icon></v-btn>
       <v-card-title>
-        <div class="headline">Footprint {{ currentIndex + 1 }} / {{ selectionData ? selectionData.count : 0 }}
+        <div class="headline">Item {{ currentIndex + 1 }} / {{ selectionData ? selectionData.count : 0 }}
           <v-btn icon v-on:click="decIndex()"><v-icon>mdi-chevron-left</v-icon></v-btn>
           <v-btn icon v-on:click="incIndex()"><v-icon>mdi-chevron-right</v-icon></v-btn>
         </div>
