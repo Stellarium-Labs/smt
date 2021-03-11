@@ -89,7 +89,14 @@ export default {
       step: (accumulator, value) => {
         if (!accumulator) accumulator = {}
         if (value === null) value = '__undefined'
-        accumulator[value] = (accumulator[value] !== undefined) ? accumulator[value] + 1 : 1
+        const prevValue = accumulator[value]
+        if (prevValue === undefined) {
+          if (accumulator.__overflow) return accumulator
+          accumulator[value] = 1
+          if (Object.keys(accumulator).length > 30) accumulator.__overflow = true
+        } else {
+          accumulator[value]++
+        }
         return accumulator
       },
       result: accumulator => accumulator ? '__JSON' + JSON.stringify(accumulator) : undefined
