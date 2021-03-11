@@ -155,6 +155,8 @@ export default {
             const field = that.$smt.fields[i]
             if (field.widget === 'tags') {
               let allValues = []
+              const hasOverFlow = !!lines.find(l => Object.keys(l[field.id]).includes('__overflow'))
+              if (hasOverFlow) continue
               lines.map(l => { allValues = allValues.concat(Object.keys(l[field.id])) })
               allValues = Array.from(new Set(allValues))
               const vals = lines.map(l => [l.x].concat(allValues.map(k => l[field.id][k])))
