@@ -15,7 +15,7 @@
     <v-chip small class="white--text ma-1" :close="tag.closable" :style="tag.closable ? 'border: 2px solid #2196f3;' : ''" :color="tag.color ? tag.color : (tag.closable ? 'primary' : 'secondary')" v-for="(tag, i) in fieldResultsData" :key="i" @click="chipClicked(tag.name)" @click:close="chipClosed(tag.name)">
       <span v-if="tag.name === '__undefined'"><i>Undefined</i></span><span v-else>{{ tag.name }}</span>&nbsp;<span :class="tag.closable ? 'white--text' : 'primary--text'"> ({{ tag.count }})</span>
     </v-chip>
-    <v-text-field class="mt-2 mb-n6" v-if="showFreeTextSearch" filled dense rounded label="Add constraint" :placeholder="freeTextSearchPlaceHolder" @change="freeTextChanged"></v-text-field>
+    <v-text-field class="mt-2 mb-n6" v-if="showFreeTextSearch" filled dense rounded label="Add comma separated constraints" :placeholder="freeTextSearchPlaceHolder" @change="freeTextChanged"></v-text-field>
   </v-col>
 
 </template>
@@ -38,10 +38,14 @@ export default {
       const constraint = { fieldId: this.fieldResults.field.id, operation: (name === '__undefined' ? 'IS_UNDEFINED' : 'STRING_EQUAL'), expression: name, negate: false }
       this.$emit('remove-constraint', constraint)
     },
-    freeTextChanged: function (v) {
-      if (v) {
-        const constraint = { fieldId: this.fieldResults.field.id, operation: (name === '__undefined' ? 'IS_UNDEFINED' : 'STRING_EQUAL'), expression: v, negate: false }
-        this.$emit('add-constraint', constraint)
+    freeTextChanged: function (clist) {
+      const that = this
+      const addConstraint = function (v) {
+        const constraint = { fieldId: that.fieldResults.field.id, operation: (name === '__undefined' ? 'IS_UNDEFINED' : 'STRING_EQUAL'), expression: v, negate: false }
+        that.$emit('add-constraint', constraint)
+      }
+      if (clist) {
+        clist.split(',').map(c => c.trim()).forEach(c => addConstraint(c))
       }
     }
   },
@@ -56,7 +60,7 @@ export default {
       return this.fieldResults && this.fieldResults.data.find(tag => tag.name === '__overflow') !== undefined
     },
     freeTextSearchPlaceHolder: function () {
-      return this.fieldResults.data.length > 0 ? 'e.g. ' + this.fieldResults.data[0].name : 'search...'
+      return this.fieldResults.data.length > 0 ? 'e.g. ' + this.fieldResults.data[0].name + ', ..' : 'search...'
     }
   }
 }
