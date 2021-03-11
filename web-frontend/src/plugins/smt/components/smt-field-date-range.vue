@@ -19,13 +19,23 @@
         <v-range-slider hide-details class="px-3 my-0" v-model="dateRangeSliderValues" :min="dateRange[0]" :max="dateRange[1]" v-on:start="isUserDragging = true" v-on:end="isUserDragging = false"></v-range-slider>
       </v-col>
       <v-col cols="4">
-        <v-text-field dense solo v-mask="dateMask" :rules="[rules.required, rules.date]" :value="formatDate(dateRangeSliderValues[0])" @change="rangeMinTextuallyChanged"></v-text-field>
+        <v-menu close-on-click>
+          <template v-slot:activator="{ on, attrs }">
+            <v-btn x-small text elevation="3" dark v-bind="attrs" v-on="on">{{ dateRangeModes[dateRangeMode].name }} <v-icon right>mdi-menu-down</v-icon></v-btn>
+          </template>
+          <v-list>
+            <v-list-item v-for="(item, index) in dateRangeModes" :key="index" @click="dateRangeMode = index">
+              <v-list-item-title>{{ item.name }}</v-list-item-title>
+            </v-list-item>
+          </v-list>
+        </v-menu>
       </v-col>
-      <v-col cols="1"></v-col>
-      <v-col cols="4">
-        <v-text-field dense solo v-mask="dateMask" :rules="[rules.required, rules.date]" :value="formatDate(dateRangeSliderValues[1])" @change="rangeMaxTextuallyChanged"></v-text-field>
+      <v-col cols="3">
+        <v-text-field style="font-size: small;" dense solo v-mask="dateMask" :rules="[rules.required, rules.date]" :value="formatDate(dateRangeSliderValues[0])" @change="rangeMinTextuallyChanged"></v-text-field>
       </v-col>
-      <v-col cols="1"></v-col>
+      <v-col cols="3">
+        <v-text-field style="font-size: small;" dense solo v-mask="dateMask" :rules="[rules.required, rules.date]" :value="formatDate(dateRangeSliderValues[1])" @change="rangeMaxTextuallyChanged"></v-text-field>
+      </v-col>
       <v-col cols="2" style="margin-top: -10px">
         <v-btn small fab :disabled="!wasChanged" @click="rangeButtonClicked">Add</v-btn>
       </v-col>
@@ -80,7 +90,15 @@ export default {
           if (isNaN(new Date(value))) return 'Invalid date'
           return true
         }
-      }
+      },
+      dateRangeMode: 0,
+      dateRangeModes: [
+        { name: 'Custom' },
+        { name: 'Last 24 hours', range: [new Date().getTime() - 1 * 24 * 3600 * 1000, new Date().getTime()] },
+        { name: 'Last 7 days', range: [new Date().getTime() - 7 * 24 * 3600 * 1000, new Date().getTime()] },
+        { name: 'Last 30 days', range: [new Date().getTime() - 30 * 24 * 3600 * 1000, new Date().getTime()] },
+        { name: 'Last 365 days', range: [new Date().getTime() - 365 * 24 * 3600 * 1000, new Date().getTime()] }
+      ]
     }
   },
   directives: { mask },
@@ -100,6 +118,7 @@ export default {
       this.wasChanged = false
     },
     cancelButtonClicked: function () {
+      this.dateRangeMode = 0
       this.$emit('constraint-live-changed', undefined)
       this.dateRangeSliderValues = this.dateRange
       this.wasChanged = false
@@ -153,10 +172,16 @@ export default {
         expression: [this.dateRangeSliderValues[0], this.dateRangeSliderValues[1]],
         negate: false
       }
-      if (this.isUserDragging) {
+      if (this.isUserDragging || this.dateRangeMode !== 0) {
         this.$emit('constraint-live-changed', constraint)
         this.wasChanged = true
       }
+    },
+    dateRangeMode: function () {
+      if (this.dateRangeMode !== 0) {
+        this.dateRangeSliderValues = this.dateRangeModes[this.dateRangeMode].range
+      }
+      this.wasChanged = true
     }
   },
   components: { GChart }
