@@ -91,9 +91,12 @@ export default {
         if (value === null) value = '__undefined'
         const prevValue = accumulator[value]
         if (prevValue === undefined) {
-          if (accumulator.__overflow) return accumulator
+          if (accumulator.__overflow) {
+            accumulator.__overflow++
+            return accumulator
+          }
           accumulator[value] = 1
-          if (Object.keys(accumulator).length > 30) accumulator.__overflow = true
+          if (Object.keys(accumulator).length >= 20) accumulator.__overflow = 1
         } else {
           accumulator[value]++
         }
