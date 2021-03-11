@@ -86,7 +86,7 @@ export default {
     // Add a custom aggregation operator for the chip tags
     db.aggregate('VALUES_AND_COUNT', {
       start: undefined,
-      step: (accumulator, value) => {
+      step: (accumulator, value, limit) => {
         if (!accumulator) accumulator = {}
         if (value === null) value = '__undefined'
         const prevValue = accumulator[value]
@@ -96,7 +96,7 @@ export default {
             return accumulator
           }
           accumulator[value] = 1
-          if (Object.keys(accumulator).length >= 20) accumulator.__overflow = 1
+          if (Object.keys(accumulator).length >= limit) accumulator.__overflow = 1
         } else {
           accumulator[value]++
         }
@@ -591,7 +591,8 @@ export default {
         } else if (agOpt.operation === 'MAX') {
           selectClause.push('MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
         } else if (agOpt.operation === 'VALUES_AND_COUNT') {
-          selectClause.push('VALUES_AND_COUNT(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
+          const limit = agOpt.limit || 20
+          selectClause.push('VALUES_AND_COUNT(' + fId2SqlId(agOpt.fieldId) + ', ' + limit + ') as ' + agOpt.out)
         } else if (agOpt.operation === 'MIN_MAX') {
           selectClause.push('MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
         } else if (agOpt.operation === 'GEO_UNION_AREA') {
@@ -601,14 +602,14 @@ export default {
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           const res = that.getDateMinMaxStep(q, agOpt.fieldId, 3)
           const fid = fId2SqlId(agOpt.fieldId)
-          selectClause.push('VALUES_AND_COUNT(' + 'STRFTIME(\'' + res.step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ') AS ' + agOpt.out)
+          selectClause.push('VALUES_AND_COUNT(' + 'STRFTIME(\'' + res.step + '\', ROUND(' + fid + '/1000), \'unixepoch\')' + ', 200) AS ' + agOpt.out)
           res.table = [['Date', 'Count']]
           agOpt.postProcessData = res
         } else if (agOpt.operation === 'NUMBER_HISTOGRAM') {
           const fid = fId2SqlId(agOpt.fieldId)
           const res= that.getNumberMinMaxStep(q, agOpt.fieldId, 10)
           const qmin = res.min !== undefined ? res.min : 0
-          selectClause.push('VALUES_AND_COUNT(' + 'ROUND((' + fid + ' - ' + qmin + ') / ' + res.step + ') * ' + res.step + ' + ' + qmin + ') AS ' + agOpt.out)
+          selectClause.push('VALUES_AND_COUNT(' + 'ROUND((' + fid + ' - ' + qmin + ') / ' + res.step + ') * ' + res.step + ' + ' + qmin + ', 200) AS ' + agOpt.out)
           res.noval = 0
           res.table = [['Value', 'Count']]
           agOpt.postProcessData = res
@@ -731,7 +732,7 @@ export default {
     // Construct the SQL SELECT clause matching the given aggregate options
     let selectClause = 'SELECT '
     selectClause += this.fieldsList.filter(f => f.widget !== 'tags').map(f => fId2SqlId(f.id)).map(k => 'MIN_MAX(' + k + ') as ' + k).join(', ')
-    selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => fId2SqlId(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ') as ' + k).join(', ')
+    selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => fId2SqlId(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ', 20) as ' + k).join(', ')
     selectClause += ', COUNT(*) as c, healpix_index ' + (LOD_LEVEL === 0 ? '' : ', geogroup_id, geometry ') + 'FROM subfeatures '
     let sqlStatement = selectClause + whereClause
     if (tileId !== -1) {
