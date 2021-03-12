@@ -208,6 +208,7 @@ export default {
           } else {
             try {
               union = turf.union(union, f)
+              turf.truncate(union, {precision: 6, coordinates: 2, mutate: true})
             } catch (err) {
               nbErr++
               lastErr = err
