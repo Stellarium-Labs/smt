@@ -20,7 +20,6 @@ glMatrix.glMatrix.setMatrixArrayType(Array)
 
 const D2R = Math.PI / 180
 const R2D = 180 / Math.PI
-const STERADIAN_TO_DEG2 = (180 / Math.PI) * (180 / Math.PI)
 
 const crossAntimeridian = function (feature) {
   let left = false
@@ -62,6 +61,8 @@ const healpixCornerFeatureCache = {}
 const healpixRotationMatsCache = {}
 
 export default {
+  STERADIAN_TO_DEG2: (180 / Math.PI) * (180 / Math.PI),
+
   // Return the area of the feature in steradiant
   featureArea: function (feature) {
     return turf.area(feature) / (1000 * 1000) * 4 * Math.PI / 509600000
@@ -237,9 +238,9 @@ export default {
   splitOnHealpixGrid: function (feature, order, alreadySplit) {
     const that = this
     let area = that.featureArea(feature)
-    if (area * STERADIAN_TO_DEG2 < 0.00001) return []
+    if (area * that.STERADIAN_TO_DEG2 < 0.00001) return []
     // For large footprints, we need to split the feature on quadrants
-    if (area * STERADIAN_TO_DEG2 > 500 && !alreadySplit) {
+    if (area * that.STERADIAN_TO_DEG2 > 500 && !alreadySplit) {
       const allbbox = []
       const hsides = 8
       const vsides = hsides / 2
