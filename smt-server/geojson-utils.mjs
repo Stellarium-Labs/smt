@@ -59,6 +59,7 @@ const rotateGeojsonPoint = function (p, m) {
 
 const healpixCornerFeatureCache = {}
 const healpixRotationMatsCache = {}
+const healpixAreaCache = {}
 
 export default {
   STERADIAN_TO_DEG2: (180 / Math.PI) * (180 / Math.PI),
@@ -170,7 +171,7 @@ export default {
   getHealpixCornerFeature: function (order, pix) {
     const cacheKey = '' + order + '_' + pix
     if (cacheKey in healpixCornerFeatureCache)
-      return healpixCornerFeatureCache[cacheKey]
+      return _.cloneDeep(healpixCornerFeatureCache[cacheKey])
     const mod = function(v, n) {
       return ( v + n ) % n
     }
@@ -188,7 +189,21 @@ export default {
     this.normalizeGeoJson(hppixel)
 
     healpixCornerFeatureCache[cacheKey] = hppixel
-    return hppixel
+    return _.cloneDeep(hppixel)
+  },
+
+  // Return the (varying!) area of a healpix pixel re-entered on 0,0 and
+  // computed by turf
+  getHealpixTurfArea: function (order, pix) {
+    const cacheKey = '' + order + '_' + pix
+    if (cacheKey in healpixAreaCache)
+      return healpixAreaCache[cacheKey]
+    const rm = this.getHealpixRotationMats(order, pix)
+    const f = this.getHealpixCornerFeature(order, pix)
+    this.rotateGeojsonFeature(f, rm.m)
+    const area = this.featureArea(f)
+    healpixAreaCache[cacheKey] = area
+    return area
   },
 
   rotationMatsForShiftCenter: function (center) {
