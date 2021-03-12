@@ -33,11 +33,9 @@ const queries = [
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA","out":"area"}]}
 ]
 
-console.log('Async queries execution time')
 for (let i in queries) {
   const start = new Date()
-  await qe.queryAsync(queries[i])
+  const res = qe.query(queries[i])
   console.log('query %d: %d ms', i, new Date() - start)
 }
 qe.deinit()
-console.log('Last script stuff')
