@@ -237,6 +237,10 @@ export default {
       this.pool = workerpool.pool('./worker.mjs')
   },
 
+  deinit: function () {
+    if (this.pool) this.pool.terminate(false, 10000)
+  },
+
   // A worker pool
   pool: undefined,
 
