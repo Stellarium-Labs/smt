@@ -365,6 +365,7 @@ export default {
 
       const origProperties = feature.properties
       feature.properties = undefined
+      turf.truncate(feature, {precision: 6, coordinates: 2, mutate: true})
       const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
       let area = 0
       for (let j = 0; j < newSubs.length; ++j) {
@@ -375,7 +376,9 @@ export default {
         geo_utils.rotateGeojsonFeature(subFrot, rotationMats.m)
         subF.area = geo_utils.featureArea(subFrot)
         area += subF.area
+        turf.truncate(subF, {precision: 6, coordinates: 2, mutate: true})
         subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
+        turf.truncate(subFrot, {precision: 6, coordinates: 2, mutate: true})
         subF.geometry_rot = '__JSON' + JSON.stringify(subFrot.geometry)
         subF.geogroup_id = feature.geogroup_id
         _.assign(subF, sqlValues)
