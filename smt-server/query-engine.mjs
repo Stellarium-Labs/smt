@@ -22,6 +22,8 @@ import healpix from '@hscmap/healpix'
 
 const HEALPIX_ORDER = 5
 const HEALPIX_PIXEL_AREA = healpix.nside2pixarea(1 << HEALPIX_ORDER)
+const AREA_TOLERANCE = 0.0001 / geo_utils.STERADIAN_TO_DEG2
+
 const __dirname = process.cwd()
 
 const fId2SqlId = function (fieldId) {
@@ -167,7 +169,7 @@ export default {
         console.assert(typeof geometry === 'string' && geometry.startsWith('__JSON'))
         if (accumulator) console.assert(accumulator.healpixIndex === healpixIndex)
         if (accumulator && accumulator.pixelFull) return accumulator
-        const pixelFull = area >= HEALPIX_PIXEL_AREA
+        const pixelFull = area >= (geo_utils.getHealpixTurfArea(HEALPIX_ORDER, healpixIndex) - AREA_TOLERANCE)
         if (!accumulator || pixelFull) {
           return {
             data: [{area: area, geometry: geometry}],
@@ -185,30 +187,40 @@ export default {
       result: accumulator => {
         if (!accumulator)
           return undefined
-        // Remove duplicate geometry to avoid useless unions
-        const set = new Set(accumulator.data.map(e => e.geometry))
-        if (set.size === 1)
+
+        let set = new Set()
+        accumulator.data = accumulator.data.filter(e => { if (set.has(e.geometry)) return false; set.add(e.geometry); return true; })
+        set = undefined
+
+        if (accumulator.data.length === 1)
           return accumulator.data[0].area
 
         // Now we need to compute union
         let union
         let farea = 0
         let lastErr
-        for (const item of set) {
-          const f = { type: "Feature", geometry: JSON.parse(item.substring(6)) }
+        let nbErr = 0
+
+        for (const item of accumulator.data) {
+          const f = { type: "Feature", geometry: JSON.parse(item.geometry.substring(6)) }
           if (union === undefined) {
             union = f
           } else {
             try {
               union = turf.union(union, f)
             } catch (err) {
+              nbErr++
               lastErr = err
             }
           }
           farea = geo_utils.featureArea(union)
-          if (farea >= HEALPIX_PIXEL_AREA) return farea
+          // If we already reached the maximum size for this healpix pixel we
+          // can already stop.
+          if (farea >= geo_utils.getHealpixTurfArea(HEALPIX_ORDER, accumulator.healpixIndex) - AREA_TOLERANCE) return farea
         }
-        if (lastErr) console.log('Last error while computing union: ' + lastErr)
+        if (lastErr) {
+          console.log('' + nbErr + ' errors while computing union, last one: ' + lastErr)
+        }
         return farea
       }
     })
