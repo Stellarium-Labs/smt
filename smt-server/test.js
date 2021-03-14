@@ -11,6 +11,7 @@
 
 
 import qe from './query-engine.mjs'
+import geo_utils from './geojson-utils.mjs'
 
 // Allow to catch CTRL+C when runnning inside a docker
 process.on('SIGINT', () => {
@@ -36,6 +37,7 @@ const queries = [
 for (let i in queries) {
   const start = new Date()
   const res = qe.query(queries[i])
+  if (i == 5) console.log('Area = ' + res.res[0].area * geo_utils.STERADIAN_TO_DEG2)
   console.log('query %d: %d ms', i, new Date() - start)
 }
 qe.deinit()
