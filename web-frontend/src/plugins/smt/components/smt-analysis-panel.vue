@@ -58,10 +58,6 @@ export default {
       inProgress: false,
       referenceField: this.$smt.fields.find(f => f.id === 'CreationDate') || this.$smt.fields[0].id,
       results: {
-        summary: {
-          count: 0,
-          area: 0
-        },
         fields: []
       }
     }
