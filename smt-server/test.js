@@ -31,13 +31,17 @@ const queries = [
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"VALUES_AND_COUNT","fieldId":"TelescopeName","out":"tags"}]},
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"VALUES_AND_COUNT","fieldId":"InputsStatus","out":"tags"}]},
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"VALUES_AND_COUNT","fieldId":"SurveyId","out":"tags"}]},
-  {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA","out":"area"}]}
+  {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA","out":"area"}]},
+  {"constraints":[],"groupingOptions":[{"operation":"GROUP_BY_DATE", "fieldId": "CreationDate", "step": "year"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM","out":"hist"}]}
 ]
 
 for (let i in queries) {
   const start = new Date()
   const res = qe.query(queries[i])
   if (i == 5) console.log('Area = ' + res.res[0].area * geo_utils.STERADIAN_TO_DEG2)
+  if (i == 6) {
+    for (const k in res.res[0].hist) console.log(k + ': ' + res.res[0].hist[k] * geo_utils.STERADIAN_TO_DEG2)
+  }
   console.log('query %d: %d ms', i, new Date() - start)
 }
 qe.deinit()

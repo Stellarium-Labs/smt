@@ -117,112 +117,137 @@ export default {
       result: accumulator => accumulator && accumulator[0] !== null ? '__JSON' + JSON.stringify(accumulator) : undefined
     })
 
+    // Compute the union of all passed JSON-serialized geometries guaranteed to
+    // be contained in the given healpix pixel.
+    // The function stops earlier if the area becomes larger than the full healpix pixel
+    const multiUnionOnHealpix = function (maxArea, arr) {
+      if (!arr) return { area: 0 }
+
+      // Return quickly if one element is already larger than maxArea
+      const fullElem = arr.find(e => e.area >= maxArea)
+      if (fullElem) return fullElem
+
+      // Remove elements with duplicated geometry
+      let set = new Set()
+      arr = arr.filter(e => { if (set.has(e.geometry)) return false; set.add(e.geometry); return true; })
+      set = undefined
+
+      if (arr.length === 1)
+        return arr[0]
+
+      // Now we need to compute union
+      let union
+      let farea = 0
+      let lastErr
+      let nbErr = 0
+
+      for (const item of arr) {
+        const f = { type: "Feature", geometry: JSON.parse(item.geometry.substring(6)) }
+        if (union === undefined) {
+          union = f
+          farea = item.area
+        } else {
+          try {
+            union = turf.union(union, f)
+            turf.truncate(union, {precision: 6, coordinates: 2, mutate: true})
+            farea = geo_utils.featureArea(union)
+          } catch (err) {
+            nbErr++
+            lastErr = err
+          }
+        }
+        // If we already reached the maximum size for this healpix pixel we
+        // can already stop.
+        if (farea >= maxArea) break
+      }
+      if (lastErr) {
+        console.log('' + nbErr + ' errors while computing union, last one: ' + lastErr)
+      }
+      return { area: farea, geometry: '__JSON' + JSON.stringify(union.geometry) }
+    }
+
     // Geo union for features guaranteed to be in the same healpix pixel
     db.aggregate('GEO_UNION_ON_HEALPIX', {
       start: undefined,
       step: function (accumulator, healpixIndex, geometry, area) {
-        console.assert(typeof geometry === 'string' && geometry.startsWith('__JSON'))
-        if (accumulator) console.assert(accumulator.healpixIndex === healpixIndex)
-        if (accumulator && accumulator.pixelFull) return accumulator
-        const pixelFull = area >= HEALPIX_PIXEL_AREA
-        if (!accumulator || pixelFull) {
+        // console.assert(typeof geometry === 'string' && geometry.startsWith('__JSON'))
+        // if (accumulator) console.assert(accumulator.healpixIndex === healpixIndex)
+        if (!accumulator) {
           return {
             data: [{area: area, geometry: geometry}],
-            pixelFull: pixelFull,
             healpixIndex: healpixIndex
           }
         }
         accumulator.data.push({area: area, geometry: geometry})
-        accumulator.pixelFull = pixelFull
       },
       result: accumulator => {
         if (!accumulator)
           return undefined
-        // Remove duplicate geometry to avoid useless unions
-        const set = new Set(accumulator.data.map(e => e.geometry))
-        if (set.size === 1)
-          return accumulator.data[0].geometry
-
-        // Now we need to compute union
-        let union
-        for (const item of set) {
-          const f = { type: "Feature", geometry: JSON.parse(item.substring(6)) }
-          if (union === undefined) {
-            union = f
-          } else {
-            try {
-              union = turf.union(union, f)
-              const farea = geo_utils.featureArea(union)
-              if (farea >= HEALPIX_PIXEL_AREA) break
-            } catch (err) {
-              console.log('Error computing feature union: ' + err)
-            }
-          }
-        }
-        return '__JSON' + JSON.stringify(union.geometry)
+        const maxArea = geo_utils.getHealpixTurfArea(HEALPIX_ORDER, accumulator.healpixIndex) - AREA_TOLERANCE
+        return multiUnionOnHealpix(maxArea, accumulator.data).geometry
       }
     })
 
     db.aggregate('GEO_UNION_AREA_ON_HEALPIX', {
       start: undefined,
       step: function (accumulator, healpixIndex, geometry, area) {
-        console.assert(typeof geometry === 'string' && geometry.startsWith('__JSON'))
-        if (accumulator) console.assert(accumulator.healpixIndex === healpixIndex)
-        if (accumulator && accumulator.pixelFull) return accumulator
-        const pixelFull = area >= (geo_utils.getHealpixTurfArea(HEALPIX_ORDER, healpixIndex) - AREA_TOLERANCE)
-        if (!accumulator || pixelFull) {
+        // console.assert(typeof geometry === 'string' && geometry.startsWith('__JSON'))
+        //if (accumulator) console.assert(accumulator.healpixIndex === healpixIndex)
+        if (!accumulator) {
           return {
             data: [{area: area, geometry: geometry}],
-            pixelFull: pixelFull,
             healpixIndex: healpixIndex
           }
         }
         accumulator.data.push({area: area, geometry: geometry})
-        accumulator.pixelFull = pixelFull
       },
-      inverse: function (accumulator, healpixIndex, geometry, area) {
-        console.log('GEO_UNION_AREA_ON_HEALPIX inverse not implemented')
-        console.assert(0)
+      result: accumulator => {
+        if (!accumulator)
+          return undefined
+        const maxArea = geo_utils.getHealpixTurfArea(HEALPIX_ORDER, accumulator.healpixIndex) - AREA_TOLERANCE
+        return multiUnionOnHealpix(maxArea, accumulator.data).area
+      }
+    })
+
+    db.aggregate('GEO_UNION_AREA_ON_HEALPIX_CUMULATED_HISTOGRAM', {
+      start: undefined,
+      step: function (accumulator, healpixIndex, geometry, area, bin) {
+        //console.assert(typeof geometry === 'string' && geometry.startsWith('__JSON'))
+        //if (accumulator) console.assert(accumulator.healpixIndex === healpixIndex)
+        if (!accumulator) {
+          const acc = {
+            bins: {},
+            healpixIndex: healpixIndex
+          }
+          acc.bins[bin] = [{area: area, geometry: geometry}]
+          return acc
+        }
+        if (bin in accumulator.bins) accumulator.bins[bin].push({area: area, geometry: geometry})
+        else accumulator.bins[bin] = [{area: area, geometry: geometry}]
       },
       result: accumulator => {
         if (!accumulator)
           return undefined
 
-        let set = new Set()
-        accumulator.data = accumulator.data.filter(e => { if (set.has(e.geometry)) return false; set.add(e.geometry); return true; })
-        set = undefined
+        // Split by bin
+        const bins = accumulator.bins
+        const sortedKeys = Object.keys(bins).sort((a, b) => {
+          if (a === b) return 0
+          if (a === 'null') return -1
+          if (b === 'null') return 1
+          return (a > b) - (a < b)
+        })
 
-        if (accumulator.data.length === 1)
-          return accumulator.data[0].area
-
-        // Now we need to compute union
-        let union
-        let farea = 0
-        let lastErr
-        let nbErr = 0
-
-        for (const item of accumulator.data) {
-          const f = { type: "Feature", geometry: JSON.parse(item.geometry.substring(6)) }
-          if (union === undefined) {
-            union = f
-          } else {
-            try {
-              union = turf.union(union, f)
-              turf.truncate(union, {precision: 6, coordinates: 2, mutate: true})
-            } catch (err) {
-              nbErr++
-              lastErr = err
-            }
-          }
-          farea = geo_utils.featureArea(union)
-          // If we already reached the maximum size for this healpix pixel we
-          // can already stop.
-          if (farea >= geo_utils.getHealpixTurfArea(HEALPIX_ORDER, accumulator.healpixIndex) - AREA_TOLERANCE) return farea
+        const maxArea = geo_utils.getHealpixTurfArea(HEALPIX_ORDER, accumulator.healpixIndex) - AREA_TOLERANCE
+        let lastRes
+        let res = {}
+        for (const k of sortedKeys) {
+          const arr = bins[k]
+          lastRes = multiUnionOnHealpix(maxArea, lastRes ? [lastRes].concat(arr) : arr)
+          res[k] = lastRes.area
+          if (lastRes.area >= maxArea) break
         }
-        if (lastErr) {
-          console.log('' + nbErr + ' errors while computing union, last one: ' + lastErr)
-        }
-        return farea
+        return '__JSON' + JSON.stringify(res)
       }
     })
 
@@ -617,6 +642,9 @@ export default {
           selectClause.push('MIN_MAX(' + fId2SqlId(agOpt.fieldId) + ') as ' + agOpt.out)
         } else if (agOpt.operation === 'GEO_UNION_AREA') {
           agOpt.postProcessData = that.computeArea(q)
+        } else if (agOpt.operation === 'GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM') {
+          console.assert(q.groupingOptions && q.groupingOptions.length > 0 && q.groupingOptions[0].operation === 'GROUP_BY_DATE')
+          agOpt.postProcessData = that.computeAreaCumulatedDateHistogram(q, agOpt, q.groupingOptions[0])
         } else if (agOpt.operation === 'GEO_BOUNDING_CAP') {
           selectClause.push('GEO_BOUNDING_CAP(geocap_x, geocap_y, geocap_z, geocap_cosa) as ' + agOpt.out)
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
@@ -643,7 +671,7 @@ export default {
 
       for (let i in q.aggregationOptions) {
         const agOpt = q.aggregationOptions[i]
-        if (agOpt.operation === 'GEO_UNION_AREA') {
+        if (agOpt.operation === 'GEO_UNION_AREA' || agOpt.operation === 'GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM') {
           line[agOpt.out] = agOpt.postProcessData
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
           const start = agOpt.postProcessData.min
@@ -794,5 +822,44 @@ export default {
     let sqlStatement = 'SELECT SUM(area) as area FROM (SELECT GEO_UNION_AREA_ON_HEALPIX(healpix_index, geometry_rot, area) as area FROM subfeatures ' + whereClause + ' GROUP BY healpix_index)'
     let res = this.db.prepare(sqlStatement).get()
     return res.area
+  },
+
+  computeAreaCumulatedDateHistogram: function (q, agOpt, grOpt) {
+    let whereClause = this.constraints2SQLWhereClause(q.constraints)
+    const dateFid = fId2SqlId(grOpt.fieldId)
+    if (!grOpt.step) {
+      throw new Error('GROUP_BY_DATE grouping operation require a step parameter')
+    }
+    const step = {
+      'year': '%Y',
+      'month': '%Y-%m',
+      'day': '%Y-%m-%d'
+    }[grOpt.step]
+    const binFunc = 'STRFTIME(\'' + step + '\', ROUND(' + dateFid + '/1000), \'unixepoch\')'
+    let sqlStatement = 'SELECT GEO_UNION_AREA_ON_HEALPIX_CUMULATED_HISTOGRAM(healpix_index, geometry_rot, area, ' + binFunc + ') as areaHisto FROM subfeatures ' + whereClause + ' GROUP BY healpix_index'
+    let res = this.db.prepare(sqlStatement).all()
+    // Combine the cumulated histograms of all healpix pixels
+    res = res.map(line => JSON.parse(line.areaHisto.substring(6)))
+    let allKeys = new Set()
+    res.forEach(line => Object.keys(line).forEach(k => allKeys.add(k)))
+    allKeys = Array.from(allKeys)
+    allKeys.sort((a, b) => {
+      if (a === b) return 0
+      if (a === 'null') return -1
+      if (b === 'null') return 1
+      return (a > b) - (a < b)
+    })
+    const histo = {}
+    for (const k of allKeys) {
+      histo[k] = 0
+    }
+    for (const line of res) {
+      let lastArea = 0
+      for (const k of allKeys) {
+        if (k in line) lastArea = line[k]
+        histo[k] += lastArea
+      }
+    }
+    return histo
   }
 }
