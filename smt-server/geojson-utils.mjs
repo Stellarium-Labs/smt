@@ -391,6 +391,40 @@ export default {
     }
     assert(res === null || res.geometry)
     return res
+  },
+
+  multiUnion: function (features, stopFunc, postFunc) {
+    if (stopFunc() === true) return null
+    if (features.length === 1) {
+      postFunc(features[0])
+      return features[0]
+    }
+
+    if (features.length <= 2) {
+      try {
+        const union = turf.union(...features)
+        turf.truncate(union, {precision: 6, coordinates: 2, mutate: true})
+        postFunc(union)
+        return union
+      } catch {
+        return null
+      }
+    }
+    let a = features.slice(0, features.length / 2)
+    let b = features.slice(features.length / 2)
+    a = this.multiUnion(a, stopFunc, postFunc)
+    b = this.multiUnion(b, stopFunc, postFunc)
+    if (!a && !b) return null
+    if (!a) return b
+    if (!b) return a
+    try {
+      const union = turf.union(a, b)
+      turf.truncate(union, {precision: 6, coordinates: 2, mutate: true})
+      postFunc(union)
+      return union
+    } catch {
+      return null
+    }
   }
 }
 

@@ -195,34 +195,17 @@ export default {
         if (accumulator.data.length === 1)
           return accumulator.data[0].area
 
-        // Now we need to compute union
-        let union
-        let farea = 0
-        let lastErr
-        let nbErr = 0
+        const maxArea = (geo_utils.getHealpixTurfArea(HEALPIX_ORDER, accumulator.healpixIndex) - AREA_TOLERANCE)
+        let stop = false
+        let stopFunc = function () { return stop }
+        let postFunc = function (f) {
+          if (stop) return
+          stop = geo_utils.featureArea(f) >= maxArea
+        }
 
-        for (const item of accumulator.data) {
-          const f = { type: "Feature", geometry: JSON.parse(item.geometry.substring(6)) }
-          if (union === undefined) {
-            union = f
-          } else {
-            try {
-              union = turf.union(union, f)
-              turf.truncate(union, {precision: 6, coordinates: 2, mutate: true})
-            } catch (err) {
-              nbErr++
-              lastErr = err
-            }
-          }
-          farea = geo_utils.featureArea(union)
-          // If we already reached the maximum size for this healpix pixel we
-          // can already stop.
-          if (farea >= geo_utils.getHealpixTurfArea(HEALPIX_ORDER, accumulator.healpixIndex) - AREA_TOLERANCE) return farea
-        }
-        if (lastErr) {
-          console.log('' + nbErr + ' errors while computing union, last one: ' + lastErr)
-        }
-        return farea
+        let union = geo_utils.multiUnion(accumulator.data.map(e => { return { type: "Feature", geometry: JSON.parse(e.geometry.substring(6)) }}), stopFunc, postFunc)
+
+        return union ? geo_utils.featureArea(union) : 0
       }
     })
 
