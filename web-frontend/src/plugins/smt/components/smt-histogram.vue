@@ -22,7 +22,10 @@
       </h3>
     </v-col>
     <v-col cols="12">
-      <GChart type="AreaChart" :data="histoData.table" :options="chartOptions" style="height: 250px;"/>
+      <div v-if="loading" style="height: 250px;">
+        <v-progress-circular size=30 indeterminate style="margin-left: calc(50% - 25px); margin-top: 110px; z-index: 1000;"></v-progress-circular>
+      </div>
+      <GChart v-else type="AreaChart" :data="histoData.table" :options="chartOptions" style="height: 250px;"/>
     </v-col>
   </v-row>
 </template>
@@ -47,6 +50,12 @@ export default {
     }
   },
   computed: {
+    loading: function () {
+      if (this.data) {
+        return !!this.data.loading
+      }
+      return true
+    },
     histoData: function () {
       if (this.data) {
         const newData = _.cloneDeep(this.data)

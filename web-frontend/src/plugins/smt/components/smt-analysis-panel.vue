@@ -39,7 +39,7 @@
             </v-menu>
           </v-col>
         </v-row>
-        <smt-histogram class="mb-0" v-for="fr in results.fields" :key="fr.field.id" :data='fr' :cumulative="cumulative" :showItemsWithoutDate="showItemsWithoutDate">{{ fr.table }}</smt-histogram>
+        <smt-histogram class="mb-0" v-for="fr in results.fields" :key="fr.field.id" :data="fr" :cumulative="cumulative" :showItemsWithoutDate="showItemsWithoutDate">{{ fr.table }}</smt-histogram>
       </v-container>
     </div>
 
@@ -49,6 +49,7 @@
 <script>
 import qe from '../query-engine'
 import SmtHistogram from './smt-histogram.vue'
+import Vue from 'vue'
 
 export default {
   data: function () {
@@ -90,8 +91,9 @@ export default {
     refreshAllFields: function () {
       const that = this
       that.inProgress = true
+      that.results.fields.length = 0
+
       that.refreshMinMax().then(function (minmax) {
-        that.results.fields = []
         if (!minmax || minmax[0] === minmax[1]) {
           that.inProgress = false
           return
@@ -112,7 +114,18 @@ export default {
           step = 'month'
         }
 
-        const q = {
+        that.results.fields.push({
+          field: { id: 'count', name: 'Items' },
+          table: [['Date', 'Items']],
+          loading: true
+        })
+        that.results.fields.push({
+          field: { id: 'area', name: 'Area' },
+          table: [['Date', 'Area']],
+          loading: true
+        })
+
+        let q = {
           constraints: that.constraints,
           groupingOptions: [{ operation: 'GROUP_BY_DATE', fieldId: that.referenceField.id, step: step }],
           aggregationOptions: [
@@ -127,8 +140,7 @@ export default {
           }
         }
         qe.query(q).then(res => {
-          // const lineWithUndefinedDate = res.res.find(l => l.x === null)
-          const lines = res.res // .filter(l => !!l.x)
+          const lines = res.res
           for (const i in lines) {
             const d = new Date(lines[i].x)
             d.setUTCHours(0, 0, 0, 0)
@@ -142,9 +154,9 @@ export default {
               lines[i].x = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
             }
           }
-          that.results.fields.push({
-            field: { id: 'count', name: 'Count' },
-            table: [['Date', 'Count']].concat(lines.map(l => [l.x, l.count])),
+          Vue.set(that.results.fields, 0, {
+            field: { id: 'count', name: 'Items' },
+            table: [['Date', 'Items']].concat(lines.map(l => [l.x, l.count])),
             step: step
           })
           for (const i in that.$smt.fields) {
@@ -167,6 +179,49 @@ export default {
         }, err => {
           console.log(err)
           that.inProgress = false
+        })
+
+        q = {
+          constraints: that.constraints,
+          groupingOptions: [{ operation: 'GROUP_ALL' }],
+          aggregationOptions: [
+            { operation: 'GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM', out: 'histo', dateFieldId: that.referenceField.id, step: step }
+          ]
+        }
+        const strToDate = function (s) {
+          if (s === null) return null
+          const d = new Date(s)
+          d.setUTCHours(0, 0, 0, 0)
+          if (step === 'month') d.setUTCDate(1)
+          if (step === 'year') {
+            d.setUTCDate(1)
+            d.setUTCMonth(0)
+          }
+          // Only keep the UTC date, skip the time
+          return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+        }
+
+        qe.query(q).then(res => {
+          const lines = res.res[0].histo
+
+          const STERADIAN_TO_DEG2 = (180 / Math.PI) * (180 / Math.PI)
+          // De-cumulate the value, because the GUI re-cumulate them for display
+          const arr = Object.keys(lines).map(k => [strToDate(k), lines[k] * STERADIAN_TO_DEG2])
+          arr.sort((a, b) => {
+            if (a[0] === b[0]) return 0
+            if (a[0] === 'null') return -1
+            if (b[0] === 'null') return 1
+            return a[0] - b[0]
+          })
+          for (let i = arr.length - 1; i > 0; --i) {
+            arr[i][1] -= arr[i - 1][1]
+          }
+
+          Vue.set(that.results.fields, 1, {
+            field: { id: 'area', name: 'Area' },
+            table: [['Date', 'Area (deg²)']].concat(arr),
+            step: step
+          })
         })
       })
     }
