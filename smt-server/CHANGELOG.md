@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.4] - 2021-03-15
+- Improve the computation of the area of the union of footprints
+- Add an aggregation operator to compute the cumulative histogram of the area of the union of footprints
+- Fix some missing background data (stars and images)
+- Add a simple test script to optimize engine performances
+
 ## [0.3.3] - 2021-03-11
 - Fix several analysis panel bugs causing data to be missed
 - Add free text search functionality to tags widget
