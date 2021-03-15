@@ -32,7 +32,7 @@ const queries = [
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"VALUES_AND_COUNT","fieldId":"InputsStatus","out":"tags"}]},
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"VALUES_AND_COUNT","fieldId":"SurveyId","out":"tags"}]},
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA","out":"area"}]},
-  {"constraints":[],"groupingOptions":[{"operation":"GROUP_BY_DATE", "fieldId": "CreationDate", "step": "year"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM","out":"hist"}]}
+  {"constraints":[],"groupingOptions":[{"operation":"GROUP_BY_DATE", "fieldId": "CreationDate", "step": "year"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA_CUMULATED","out":"hist"}]}
 ]
 
 for (let i in queries) {

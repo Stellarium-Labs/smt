@@ -643,8 +643,8 @@ export default {
         } else if (agOpt.operation === 'GEO_UNION_AREA') {
           agOpt.postProcessData = that.computeArea(q)
         } else if (agOpt.operation === 'GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM') {
-          console.assert(q.groupingOptions && q.groupingOptions.length > 0 && q.groupingOptions[0].operation === 'GROUP_BY_DATE')
-          agOpt.postProcessData = that.computeAreaCumulatedDateHistogram(q, agOpt, q.groupingOptions[0])
+          console.assert(q.groupingOptions && q.groupingOptions.length === 1 && q.groupingOptions[0].operation === 'GROUP_ALL')
+          agOpt.postProcessData = that.computeAreaCumulatedDateHistogram(q, agOpt)
         } else if (agOpt.operation === 'GEO_BOUNDING_CAP') {
           selectClause.push('GEO_BOUNDING_CAP(geocap_x, geocap_y, geocap_z, geocap_cosa) as ' + agOpt.out)
         } else if (agOpt.operation === 'DATE_HISTOGRAM') {
@@ -824,17 +824,20 @@ export default {
     return res.area
   },
 
-  computeAreaCumulatedDateHistogram: function (q, agOpt, grOpt) {
-    let whereClause = this.constraints2SQLWhereClause(q.constraints)
-    const dateFid = fId2SqlId(grOpt.fieldId)
-    if (!grOpt.step) {
-      throw new Error('GROUP_BY_DATE grouping operation require a step parameter')
+  computeAreaCumulatedDateHistogram: function (q, agOpt) {
+    if (!agOpt.dateFieldId) {
+      throw new Error('GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM require a dateFieldId parameter')
     }
+    if (!agOpt.step) {
+      throw new Error('GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM require a step parameter')
+    }
+    let whereClause = this.constraints2SQLWhereClause(q.constraints)
+    const dateFid = fId2SqlId(agOpt.dateFieldId)
     const step = {
       'year': '%Y',
       'month': '%Y-%m',
       'day': '%Y-%m-%d'
-    }[grOpt.step]
+    }[agOpt.step]
     const binFunc = 'STRFTIME(\'' + step + '\', ROUND(' + dateFid + '/1000), \'unixepoch\')'
     let sqlStatement = 'SELECT GEO_UNION_AREA_ON_HEALPIX_CUMULATED_HISTOGRAM(healpix_index, geometry_rot, area, ' + binFunc + ') as areaHisto FROM subfeatures ' + whereClause + ' GROUP BY healpix_index'
     let res = this.db.prepare(sqlStatement).all()
