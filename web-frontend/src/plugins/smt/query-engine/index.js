@@ -10,6 +10,8 @@
 // funding from the Centre national d'études spatiales (CNES).
 
 import marked from 'marked'
+import stableStringify from 'json-stable-stringify'
+import _ from 'lodash'
 
 export default {
   fieldsList: undefined,
@@ -41,10 +43,20 @@ export default {
     return smtConfig
   },
 
+  queryToString: function (q) {
+    const q2 = _.cloneDeep(q)
+    q2.constraints.sort((c1, c2) => {
+      const a = c1.fieldId + c1.operation + c1.expression
+      const b = c2.fieldId + c2.operation + c2.expression
+      return (a > b) - (a < b)
+    })
+    return stableStringify(q2)
+  },
+
   query: function (q) {
     const that = this
     console.assert(that.smtServerInfo.baseHashKey)
-    const body = encodeURIComponent(JSON.stringify(q))
+    const body = encodeURIComponent(this.queryToString(q))
     return fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + that.smtServerInfo.baseHashKey + '/query?q=' + body, {
       method: 'GET',
       headers: {
@@ -59,7 +71,7 @@ export default {
   queryVisual: function (q) {
     const that = this
     console.assert(that.smtServerInfo.baseHashKey)
-    const body = encodeURIComponent(JSON.stringify(q))
+    const body = encodeURIComponent(stableStringify(q))
     return fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + that.smtServerInfo.baseHashKey + '/queryVisual?q=' + body, {
       method: 'GET',
       headers: {
