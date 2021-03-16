@@ -57,6 +57,7 @@ export default {
       cumulative: true,
       showItemsWithoutDate: true,
       inProgress: false,
+      refreshCount: 0,
       referenceField: this.$smt.fields.find(f => f.id === 'CreationDate') || this.$smt.fields[0].id,
       results: {
         fields: []
@@ -93,7 +94,11 @@ export default {
       that.inProgress = true
       that.results.fields.length = 0
 
+      this.refreshCount++
+      const refreshCount = this.refreshCount
+
       that.refreshMinMax().then(function (minmax) {
+        if (refreshCount !== that.refreshCount) return
         if (!minmax || minmax[0] === minmax[1]) {
           that.inProgress = false
           return
@@ -140,6 +145,7 @@ export default {
           }
         }
         qe.query(q).then(res => {
+          if (refreshCount !== that.refreshCount) return
           const lines = res.res
           for (const i in lines) {
             const d = new Date(lines[i].x)
@@ -202,6 +208,7 @@ export default {
         }
 
         qe.query(q).then(res => {
+          if (refreshCount !== that.refreshCount) return
           const lines = res.res[0].histo
 
           const STERADIAN_TO_DEG2 = (180 / Math.PI) * (180 / Math.PI)

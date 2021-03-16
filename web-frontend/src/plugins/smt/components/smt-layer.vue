@@ -123,6 +123,7 @@ export default {
       colorAssignedFieldRange: [0, 1],
       autoFitViewToContent: false,
       showAnalysisPanel: false,
+      refreshCount: 0,
       query: {
         constraints: [],
         liveConstraint: undefined
@@ -196,7 +197,7 @@ export default {
         that.$stel.zoomTo(fov * 1.5, 0.5)
       })
     },
-    refreshObservationsInSky: function () {
+    refreshObservationsInSky: function (refreshCount) {
       const that = this
 
       if (this.autoFitViewToContent) this.fitViewToContent()
@@ -208,6 +209,7 @@ export default {
       //  q2.groupingOptions = [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
       // }
       return qe.queryVisual(q2).then(res => {
+        if (that.refreshCount !== refreshCount) return
         that.clearGeoJson()
         that.geojsonObj = that.$observingLayer.add('geojson-survey', {
           path: process.env.VUE_APP_SMT_SERVER + '/api/v1/hips/' + res
@@ -218,7 +220,7 @@ export default {
         that.refreshGeojsonLiveFilter()
       })
     },
-    refreshAllFields: function () {
+    refreshAllFields: function (refreshCount) {
       const that = this
 
       // Re-compute layer count
@@ -228,6 +230,7 @@ export default {
         aggregationOptions: [{ operation: 'COUNT', out: 'total' }]
       }
       qe.query(q1).then(res => {
+        if (that.refreshCount !== refreshCount) return
         that.results.summary.count = res.res[0].total
       })
 
@@ -237,9 +240,8 @@ export default {
         groupingOptions: [{ operation: 'GROUP_ALL' }],
         aggregationOptions: [{ operation: 'GEO_UNION_AREA', out: 'area' }]
       }
-      that.lastQuery = qe.queryToString(q1)
       qe.query(q1).then(res => {
-        if (that.lastQuery !== qe.queryToString(res.q)) return
+        if (that.refreshCount !== refreshCount) return
         that.results.summary.area = res.res[0].area * (180 / Math.PI) * (180 / Math.PI)
       })
 
@@ -257,6 +259,7 @@ export default {
             aggregationOptions: [{ operation: 'VALUES_AND_COUNT', fieldId: field.id, out: 'tags' }]
           }
           qe.query(q).then(res => {
+            if (that.refreshCount !== refreshCount) return
             let tags = res.res[0].tags ? res.res[0].tags : {}
             tags = Object.keys(tags).map(function (key) {
               const closable = that.query.constraints.filter(c => c.fieldId === field.id && c.expression === key).length !== 0
@@ -284,6 +287,7 @@ export default {
             aggregationOptions: [{ operation: 'DATE_HISTOGRAM', fieldId: field.id, out: 'dh' }]
           }
           qe.query(q).then(res => {
+            if (that.refreshCount !== refreshCount) return
             Vue.set(that.results.fields[i], 'field', field)
             Vue.set(that.results.fields[i], 'status', 'ok')
             Vue.set(that.results.fields[i], 'edited', edited)
@@ -321,6 +325,7 @@ export default {
             aggregationOptions: [{ operation: 'NUMBER_HISTOGRAM', fieldId: field.id, out: 'dh' }]
           }
           qe.query(q).then(res => {
+            if (that.refreshCount !== refreshCount) return
             Vue.set(that.results.fields[i], 'field', field)
             Vue.set(that.results.fields[i], 'status', 'ok')
             Vue.set(that.results.fields[i], 'edited', edited)
@@ -355,6 +360,9 @@ export default {
         return
       }
 
+      this.refreshCount++
+      const refreshCount = this.refreshCount
+
       // Clear sky
       this.clearGeoJson()
       // Reset all fields values
@@ -371,17 +379,18 @@ export default {
           aggregationOptions: [{ operation: 'MIN_MAX', fieldId: that.colorAssignedField.id, out: 'minmax' }]
         }
         qe.query(q).then(res => {
+          if (refreshCount !== that.refreshCount) return
           that.colorAssignedFieldRange = res.res[0].minmax
           // Recompute all fields & sky content
-          that.refreshObservationsInSky()
-          that.refreshAllFields()
+          that.refreshObservationsInSky(refreshCount)
+          that.refreshAllFields(refreshCount)
         })
         return
       }
 
       // Recompute all fields & sky content
-      that.refreshObservationsInSky()
-      that.refreshAllFields()
+      that.refreshObservationsInSky(refreshCount)
+      that.refreshAllFields(refreshCount)
     },
     cssColorForTag: function (val) {
       const c = mapColor(stringHash(val) / 4294967295)
