@@ -136,7 +136,7 @@ export default {
         for (const i in that.$smt.fields) {
           const field = that.$smt.fields[i]
           if (field.widget === 'tags') {
-            q.aggregationOptions.push({ operation: 'VALUES_AND_COUNT', fieldId: field.id, out: field.id })
+            q.aggregationOptions.push({ operation: 'VALUES_AND_COUNT', fieldId: field.id, out: field.id, limit: 8 })
           }
         }
         qe.query(q).then(res => {
