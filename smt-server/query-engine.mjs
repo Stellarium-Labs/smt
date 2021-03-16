@@ -780,7 +780,7 @@ export default {
     // Construct the SQL SELECT clause matching the given aggregate options
     let selectClause = 'SELECT '
     selectClause += this.fieldsList.filter(f => f.widget !== 'tags').map(f => fId2SqlId(f.id)).map(k => 'MIN_MAX(' + k + ') as ' + k).join(', ')
-    selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => fId2SqlId(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ', 20) as ' + k).join(', ')
+    selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => fId2SqlId(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ', 10) as ' + k).join(', ')
     selectClause += ', COUNT(*) as c, healpix_index ' + (LOD_LEVEL === 0 ? '' : ', geogroup_id, geometry ') + 'FROM subfeatures '
     let sqlStatement = selectClause + whereClause
     if (tileId !== -1) {
