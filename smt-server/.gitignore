@@ -4,4 +4,6 @@ access_key
 extraVersionHash.txt
 qe.db
 qe.db-HashKey.txt
+qe.db-shm
+qe.db-wal
 frontend/dist/
