@@ -124,7 +124,6 @@ export default {
       autoFitViewToContent: false,
       showAnalysisPanel: false,
       refreshCount: 0,
-      constraints: [],
       liveConstraint: undefined,
       editedConstraint: undefined,
       results: {
@@ -138,7 +137,7 @@ export default {
       selectedFootprintData: []
     }
   },
-  props: ['name', 'current', 'z'],
+  props: ['name', 'current', 'z', 'constraints'],
   created: function () {
     console.log('Created layer: ' + this.name)
   },
@@ -465,22 +464,22 @@ export default {
     },
     addConstraint: function (c) {
       const that = this
-      this.constraints = this.constraints.filter(cons => {
+      const newConstraints = this.constraints.filter(cons => {
         const consField = that.$smt.fields.find(f => f.id === cons.fieldId)
         if (consField.widget === 'date_range' && cons.fieldId === c.fieldId) return false
         if (consField.widget === 'number_range' && cons.fieldId === c.fieldId) return false
         return true
       })
-      this.constraints.push(c)
+      newConstraints.push(c)
       this.editedConstraint = c
-      this.refreshLayer()
+      this.$emit('update:constraints', newConstraints)
     },
     removeConstraint: function (c) {
-      this.constraints = this.constraints.filter(cons => {
+      const newConstraints = this.constraints.filter(cons => {
         if (cons.fieldId === c.fieldId && cons.expression === c.expression && cons.operation === c.operation) return false
         return true
       })
-      this.refreshLayer()
+      this.$emit('update:constraints', newConstraints)
     },
     constraintLiveChanged: function (c) {
       this.liveConstraint = c
@@ -491,8 +490,7 @@ export default {
       this.refreshLayer()
     },
     constraintClosed: function (i) {
-      this.constraints.splice(i, 1)
-      this.refreshLayer()
+      this.removeConstraint(this.constraints[i])
     },
     isEdited: function (c) {
       return this.editedConstraint && c.fieldId === this.editedConstraint.fieldId
@@ -545,6 +543,9 @@ export default {
     },
     autoFitViewToContent: function () {
       if (this.autoFitViewToContent) this.fitViewToContent()
+    },
+    constraints: function () {
+      this.refreshLayer()
     }
   },
   computed: {

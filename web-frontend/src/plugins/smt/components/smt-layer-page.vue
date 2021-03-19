@@ -34,7 +34,7 @@
     <div style="height: calc(100% - 38px - 48px);">
       <v-tabs-items v-model="tab" style="height: 100%;">
         <v-tab-item :eager="true" v-for="(layer, index) in layersList" :key="layer.id" style="height: 100%; display: flex; flex-flow: column;">
-          <smt-layer :name="layer.name" :z="index" :current="index === tab" v-on:registerClickCb="onRegisterClickCb" v-on:unregisterClickCb="onUnregisterClickCb"></smt-layer>
+          <smt-layer :name="layer.name" :z="index" :constraints="layer.constraints" @update:constraints="updateLayerConstraints(index, $event)" :current="index === tab" v-on:registerClickCb="onRegisterClickCb" v-on:unregisterClickCb="onUnregisterClickCb"></smt-layer>
         </v-tab-item>
       </v-tabs-items>
     </div>
@@ -45,6 +45,8 @@
 import SmtPanelRootToolbar from './smt-panel-root-toolbar.vue'
 import SmtLayer from './smt-layer.vue'
 import draggable from 'vuedraggable'
+import _ from 'lodash'
+import Vue from 'vue'
 
 export default {
   data: function () {
@@ -55,6 +57,11 @@ export default {
     }
   },
   methods: {
+    updateLayerConstraints: function (index, newConstraints) {
+      const l = _.cloneDeep(this.layersList[index])
+      l.constraints = _.cloneDeep(newConstraints)
+      Vue.set(this.layersList, index, l)
+    },
     renameLayer: async function () {
       const res = await this.$dialog.prompt({
         text: 'New name',
@@ -69,7 +76,7 @@ export default {
           this.layerNameIdx++
         } while (this.layersList.find(l => l.name === name) !== undefined)
       }
-      this.layersList.push({ id: this.layerNameIdx, name: name })
+      this.layersList.push({ id: this.layerNameIdx, name: name, constraints: [] })
       this.tab = this.layersList.length - 1
     },
     delLayer: function (id) {
