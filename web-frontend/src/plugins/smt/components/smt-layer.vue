@@ -11,7 +11,7 @@
 
 <template>
   <div style="height: 100%; display: flex; flex-flow: column;">
-    <smt-selection-info :selectedFeatures="selectedFootprintData" :query="query" @unselect="unselect()"></smt-selection-info>
+    <smt-selection-info :selectedFeatures="selectedFootprintData" :constraints="constraints" @unselect="unselect()"></smt-selection-info>
     <v-btn elevation="2" fab small color="secondary" style="position: absolute; margin-left: -50px" @click="showAnalysisPanel = true"><v-icon>mdi-chart-areaspline</v-icon></v-btn>
     <v-card tile color="#424242">
       <v-card-text style="padding-top: 8px;">
@@ -79,7 +79,7 @@
       </v-container>
     </div>
     <div v-if="showAnalysisPanel" style="position: absolute; margin-left: calc(-100vw + 100%); width: calc(100vw - 100%); height: 100vh; margin-top: -86px; z-index: 100;">
-      <smt-analysis-panel style="height: 100vh;" class="get-click" :name="name" :constraints="query.constraints" v-on:request-close="showAnalysisPanel = false"></smt-analysis-panel>
+      <smt-analysis-panel style="height: 100vh;" class="get-click" :name="name" :constraints="constraints" v-on:request-close="showAnalysisPanel = false"></smt-analysis-panel>
     </div>
   </div>
 </template>
@@ -124,10 +124,8 @@ export default {
       autoFitViewToContent: false,
       showAnalysisPanel: false,
       refreshCount: 0,
-      query: {
-        constraints: [],
-        liveConstraint: undefined
-      },
+      constraints: [],
+      liveConstraint: undefined,
       editedConstraint: undefined,
       results: {
         summary: {
@@ -184,7 +182,7 @@ export default {
       const that = this
       // Re-compute bounding cap containing all features of this layer
       const q = {
-        constraints: that.query.constraints,
+        constraints: that.constraints,
         groupingOptions: [{ operation: 'GROUP_ALL' }],
         aggregationOptions: [{ operation: 'GEO_BOUNDING_CAP', out: 'cap' }]
       }
@@ -203,7 +201,7 @@ export default {
       if (this.autoFitViewToContent) this.fitViewToContent()
 
       const q2 = {
-        constraints: that.query.constraints
+        constraints: that.constraints
       }
       // if (that.colorAssignedField.widget === 'tags') {
       //  q2.groupingOptions = [{ operation: 'GROUP_BY', fieldId: that.colorAssignedField.id }]
@@ -225,7 +223,7 @@ export default {
 
       // Re-compute layer count
       let q1 = {
-        constraints: that.query.constraints,
+        constraints: that.constraints,
         groupingOptions: [{ operation: 'GROUP_ALL' }],
         aggregationOptions: [{ operation: 'COUNT', out: 'total' }]
       }
@@ -236,7 +234,7 @@ export default {
 
       // Re-compute area covered by the features of this layer
       q1 = {
-        constraints: that.query.constraints,
+        constraints: that.constraints,
         groupingOptions: [{ operation: 'GROUP_ALL' }],
         aggregationOptions: [{ operation: 'GEO_UNION_AREA', out: 'area' }]
       }
@@ -245,8 +243,8 @@ export default {
         that.results.summary.area = res.res[0].area * (180 / Math.PI) * (180 / Math.PI)
       })
 
-      const queryConstraintsEdited = this.query.constraints.filter(c => !this.isEdited(c))
-      const constraintsIds = that.query.constraints.map(c => c.fieldId)
+      const queryConstraintsEdited = this.constraints.filter(c => !this.isEdited(c))
+      const constraintsIds = that.constraints.map(c => c.fieldId)
 
       // And recompute all fields
       for (const i in that.$smt.fields) {
@@ -254,7 +252,7 @@ export default {
         const edited = that.editedConstraint && that.editedConstraint.fieldId === field.id
         if (field.widget === 'tags') {
           const q = {
-            constraints: edited ? queryConstraintsEdited : this.query.constraints,
+            constraints: edited ? queryConstraintsEdited : this.constraints,
             groupingOptions: [{ operation: 'GROUP_ALL' }],
             aggregationOptions: [{ operation: 'VALUES_AND_COUNT', fieldId: field.id, out: 'tags' }]
           }
@@ -262,7 +260,7 @@ export default {
             if (that.refreshCount !== refreshCount) return
             let tags = res.res[0].tags ? res.res[0].tags : {}
             tags = Object.keys(tags).map(function (key) {
-              const closable = that.query.constraints.filter(c => c.fieldId === field.id && c.expression === key).length !== 0
+              const closable = that.constraints.filter(c => c.fieldId === field.id && c.expression === key).length !== 0
               return { name: key, count: tags[key], closable: closable, color: field.id === that.colorAssignedField.id ? that.cssColorForTag(key) : undefined }
             })
             Vue.set(that.results.fields, i, {
@@ -282,7 +280,7 @@ export default {
         }
         if (field.widget === 'date_range') {
           const q = {
-            constraints: this.query.constraints,
+            constraints: this.constraints,
             groupingOptions: [{ operation: 'GROUP_ALL' }],
             aggregationOptions: [{ operation: 'DATE_HISTOGRAM', fieldId: field.id, out: 'dh' }]
           }
@@ -320,7 +318,7 @@ export default {
         }
         if (field.widget === 'number_range') {
           const q = {
-            constraints: this.query.constraints,
+            constraints: this.constraints,
             groupingOptions: [{ operation: 'GROUP_ALL' }],
             aggregationOptions: [{ operation: 'NUMBER_HISTOGRAM', fieldId: field.id, out: 'dh' }]
           }
@@ -374,7 +372,7 @@ export default {
       if (that.colorAssignedField.widget !== 'tags') {
         // For later steps, computing the color requires to know the min/max range first.
         const q = {
-          constraints: that.query.constraints,
+          constraints: that.constraints,
           groupingOptions: [{ operation: 'GROUP_ALL' }],
           aggregationOptions: [{ operation: 'MIN_MAX', fieldId: that.colorAssignedField.id, out: 'minmax' }]
         }
@@ -467,18 +465,18 @@ export default {
     },
     addConstraint: function (c) {
       const that = this
-      this.query.constraints = this.query.constraints.filter(cons => {
+      this.constraints = this.constraints.filter(cons => {
         const consField = that.$smt.fields.find(f => f.id === cons.fieldId)
         if (consField.widget === 'date_range' && cons.fieldId === c.fieldId) return false
         if (consField.widget === 'number_range' && cons.fieldId === c.fieldId) return false
         return true
       })
-      this.query.constraints.push(c)
+      this.constraints.push(c)
       this.editedConstraint = c
       this.refreshLayer()
     },
     removeConstraint: function (c) {
-      this.query.constraints = this.query.constraints.filter(cons => {
+      this.constraints = this.constraints.filter(cons => {
         if (cons.fieldId === c.fieldId && cons.expression === c.expression && cons.operation === c.operation) return false
         return true
       })
@@ -489,11 +487,11 @@ export default {
       this.refreshGeojsonLiveFilter()
     },
     constraintClicked: function (i) {
-      this.editedConstraint = this.query.constraints[i]
+      this.editedConstraint = this.constraints[i]
       this.refreshLayer()
     },
     constraintClosed: function (i) {
-      this.query.constraints.splice(i, 1)
+      this.constraints.splice(i, 1)
       this.refreshLayer()
     },
     isEdited: function (c) {
@@ -562,7 +560,7 @@ export default {
         return []
       }
 
-      let res = _.cloneDeep(this.query.constraints)
+      let res = _.cloneDeep(this.constraints)
       for (const i in res) {
         res[i].closable = true
         res[i].field = this.$smt.fields.find(f => f.id === res[i].fieldId)

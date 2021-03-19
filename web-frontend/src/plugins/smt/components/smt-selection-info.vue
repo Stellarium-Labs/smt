@@ -54,7 +54,7 @@ export default {
       selectionData: undefined
     }
   },
-  props: ['selectedFeatures', 'query'],
+  props: ['selectedFeatures', 'constraints'],
   computed: {
     currentItem: function () {
       if (!this.selectionData || !this.selectionData.features.length) return { fields: [], properties: {} }
@@ -136,7 +136,7 @@ export default {
         },
         limit: 500
       }
-      q.constraints = that.query.constraints.concat(q.constraints)
+      q.constraints = that.constraints.concat(q.constraints)
       qe.query(q).then(qres => {
         that.currentIndex = 0
         if (!qres.res.length) {
