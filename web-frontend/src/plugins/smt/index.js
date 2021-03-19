@@ -16,8 +16,12 @@ import VueGoogleCharts from 'vue-google-charts'
 import qe from './query-engine'
 import filtrex from 'filtrex'
 import sprintfjs from 'sprintf-js'
+import vuetify from '@/plugins/vuetify'
+import VuetifyDialog from 'vuetify-dialog'
+import 'vuetify-dialog/dist/vuetify-dialog.css'
 
 Vue.use(VueGoogleCharts)
+Vue.use(VuetifyDialog, { context: { vuetify } })
 
 export default {
   vuePlugin: {

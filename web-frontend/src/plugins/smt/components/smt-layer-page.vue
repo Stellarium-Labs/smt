@@ -18,6 +18,18 @@
         <v-chip v-for="layer in layersList" :key="layer.id" color="#262626" close draggable close-icon="mdi-close" class="chip-tab-inactive" label @click:close="delLayer(layer.id)">{{ layer.name }}</v-chip>
       </draggable>
       <v-btn icon class="transparent" @click.stop="addLayer()" style="margin-left: 0px; margin-top: 0px;"><v-icon>mdi-plus</v-icon></v-btn>
+      <v-spacer></v-spacer>
+      <v-menu close-on-click>
+        <template v-slot:activator="{ on, attrs }">
+          <v-btn icon class="transparent" dark v-bind="attrs" v-on="on" style="margin-left: 0px; margin-top: 0px;"><v-icon>mdi-dots-vertical</v-icon></v-btn>
+        </template>
+        <v-list>
+          <v-list-item :disabled="layersList.length === 0" @click="renameLayer">
+            <v-list-item-title>Rename current layer</v-list-item-title>
+          </v-list-item>
+        </v-list>
+      </v-menu>
+
     </v-chip-group>
     <div style="height: calc(100% - 38px - 48px);">
       <v-tabs-items v-model="tab" style="height: 100%;">
@@ -43,6 +55,13 @@ export default {
     }
   },
   methods: {
+    renameLayer: async function () {
+      const res = await this.$dialog.prompt({
+        text: 'New name',
+        title: 'Rename layer'
+      })
+      this.layersList[this.tab].name = res
+    },
     addLayer: function (name) {
       if (!name) {
         do {

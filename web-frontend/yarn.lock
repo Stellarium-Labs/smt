@@ -7559,6 +7559,10 @@ vuedraggable@^2.24.3:
   dependencies:
     sortablejs "1.10.2"
 
+vuetify-dialog@^2.0.14:
+  version "2.0.14"
+  resolved "https://registry.yarnpkg.com/vuetify-dialog/-/vuetify-dialog-2.0.14.tgz#194010bc03b94a61d3673825a3eeff873b9e1358"
+
 vuetify-loader@^1.2.2:
   version "1.6.0"
   resolved "https://registry.yarnpkg.com/vuetify-loader/-/vuetify-loader-1.6.0.tgz#05df0805b3ab2ff0de198109d34f9da3f69da667"
