@@ -5,6 +5,7 @@
   "author": "Fabien Chereau <fabien@stellarium-labs.fr>",
   "private": true,
   "dependencies": {
+    "downloadjs": "^1.4.7",
     "filtrex": "^2.0.0",
     "json-stable-stringify": "^1.0.1",
     "marked": "^1.2.7",

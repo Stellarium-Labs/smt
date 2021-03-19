@@ -27,6 +27,12 @@
           <v-list-item :disabled="layersList.length === 0" @click="renameLayer">
             <v-list-item-title>Rename current layer</v-list-item-title>
           </v-list-item>
+          <v-list-item :disabled="layersList.length === 0" @click="saveAllLayers">
+            <v-list-item-title>Save all layers</v-list-item-title>
+          </v-list-item>
+          <v-list-item>
+            <v-list-item-title>Load layers <input type="file" @change="loadLayers"></v-list-item-title>
+          </v-list-item>
         </v-list>
       </v-menu>
 
@@ -47,6 +53,7 @@ import SmtLayer from './smt-layer.vue'
 import draggable from 'vuedraggable'
 import _ from 'lodash'
 import Vue from 'vue'
+import download from 'downloadjs'
 
 export default {
   data: function () {
@@ -68,6 +75,20 @@ export default {
         title: 'Rename layer'
       })
       this.layersList[this.tab].name = res
+    },
+    saveAllLayers: function () {
+      download(JSON.stringify(this.layersList, null, 2), 'layers.json', 'application/json')
+    },
+    loadLayers: function (e) {
+      const that = this
+      const files = e.target.files || e.dataTransfer.files
+      if (!files.length) return
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const newLayer = JSON.parse(e.target.result)
+        that.layersList = newLayer
+      }
+      reader.readAsText(files[0])
     },
     addLayer: function (name) {
       if (!name) {
