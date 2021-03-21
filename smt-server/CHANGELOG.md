@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.5] - 2021-03-21
+- Fix display issues in analyze panel
+- Avoid cache misses when only the order of query constraints was changed
+- Fix interlaced query and responses when fast clicking in the GUI
+- Add layer rename/save/load features
+
 ## [0.3.4] - 2021-03-15
 - Improve the computation of the area of the union of footprints
 - Add an aggregation operator to compute the cumulative histogram of the area of the union of footprints
