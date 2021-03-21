@@ -31,7 +31,10 @@
             <v-list-item-title>Save all layers</v-list-item-title>
           </v-list-item>
           <v-list-item>
-            <v-list-item-title>Load layers <input type="file" @change="loadLayers"></v-list-item-title>
+            <label class="file-select">
+              <v-list-item-title>Load layers..</v-list-item-title>
+              <input type="file" @change="loadLayers"/>
+            </label>
           </v-list-item>
         </v-list>
       </v-menu>
@@ -158,5 +161,8 @@ export default {
 .chip-tab-inactive {
   background-color: #262626;
   border-radius: 2px !important;
+}
+.file-select > input[type="file"] {
+  display: none;
 }
 </style>
