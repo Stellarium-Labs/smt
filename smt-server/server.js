@@ -24,8 +24,8 @@ const SMT_SERVER_INFO = {
   dataGitServer: 'git@github.com:Stellarium-Labs/smt-data.git',
   dataGitBranch: process.env.SMT_DATA_BRANCH || 'master',
   dataGitSha1: '',
-  baseHashKey: '',
-  status: 'starting'
+  dataLocalModifications: undefined,
+  baseHashKey: ''
 }
 
 console.log('Starting SMT Server ' + SMT_SERVER_INFO.version + ' on data branch ' + SMT_SERVER_INFO.dataGitBranch)
@@ -125,22 +125,16 @@ SMT_SERVER_INFO.baseHashKey = hash_sum(baseHashKey)
 console.log('Server base hash key: ' + SMT_SERVER_INFO.baseHashKey)
 
 const dbFileName = __dirname + '/qe.db'
+
 // Check if we can preserve the previous DB to avoid re-loading the whole DB
 let reloadGeojson = true
-const dbAlreadyExists = fs.existsSync(dbFileName)
-if (dbAlreadyExists) {
+if (fs.existsSync(dbFileName) && !fs.existsSync('dontReloadGeojson')) {
   try {
-    const lastDBbHashKey = fs.readFileSync(dbFileName + '-HashKey.txt', 'utf8').trim()
-    if (lastDBbHashKey === SMT_SERVER_INFO.baseHashKey ||
-        lastDBbHashKey === 'dontReloadGeojson') {
+    const dbServerInfo = QueryEngine.getDbExtraInfo(dbFileName)
+    if (dbServerInfo.baseHashKey === SMT_SERVER_INFO.baseHashKey) {
       reloadGeojson = false
-    } else {
-      // Code and/or data changed, supress previous DB
-      fs.unlinkSync(dbFileName)
     }
-  } catch (err) {
-    fs.unlinkSync(dbFileName)
-  }
+  } catch (err) {}
 }
 
 // And start listening to connection while the DB is being filled
@@ -150,13 +144,11 @@ app.listen(port, () => {
 
 if (reloadGeojson) {
   console.log('Data or code has changed since last start: reload geojson')
-  await QueryEngine.generateDb(__dirname + '/data/', dbFileName)
+  await QueryEngine.generateDb(__dirname + '/data/', dbFileName, SMT_SERVER_INFO)
   console.log('*** DB Loading finished ***')
-  fs.writeFileSync(dbFileName + '-HashKey.txt', SMT_SERVER_INFO.baseHashKey)
 } else {
   console.log('No data/code change since last start: reload previous DB')
 }
-
 
 // Initialize the read-only engine
 const qe = new QueryEngine(dbFileName)

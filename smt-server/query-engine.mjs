@@ -61,9 +61,9 @@ export default class QueryEngine {
     let that = this
     assert(fs.existsSync(dbFileName))
     that.#dbFileName = dbFileName
-    console.log('Opening existing Data Base (read only): ' + dbFileName)
     const db = new Database(dbFileName, { readonly: true });
-    that.smtConfig = JSON.parse(db.prepare('SELECT data from smtConfig').get().data)
+    that.smtConfig = JSON.parse(db.prepare('SELECT smt_config from smt_meta_data').get().smt_config)
+    that.extraInfo = JSON.parse(db.prepare('SELECT extra_info from smt_meta_data').get().extra_info)
 
     // Initialize modules's attributes based on the config file
     that.#fieldsList = _.cloneDeep(that.smtConfig.fields)
@@ -700,9 +700,15 @@ export default class QueryEngine {
     return histo
   }
 
-  static generateDb (dataDir, dbFileName) {
-    // Create the DB file and ingest everything, but dont intialize this object
-    // at all, another call to init() is necessary for this.
+  static getDbExtraInfo (dbFileName) {
+    console.assert(fs.existsSync(dbFileName))
+    const db = new Database(dbFileName, { readonly: true });
+    return JSON.parse(db.prepare('SELECT extra_info from smt_meta_data').get().extra_info)
+  }
+
+  static generateDb (dataDir, dbFileName, extraInfo) {
+    // Create the DB file and ingest all data present in dataDir + user-passed
+    // extraInfo data.
     const dbAlreadyExists = fs.existsSync(dbFileName)
     if (dbAlreadyExists) {
       // supress previous DB
@@ -719,9 +725,9 @@ export default class QueryEngine {
 
     // Initialize DB structure
 
-    // Save config file inside the DB
-    db.prepare('CREATE TABLE smtconfig (data TEXT)').run()
-    db.prepare('INSERT INTO smtconfig (data) VALUES (?)').run(JSON.stringify(smtConfig))
+    // Save config file and extra info inside the DB
+    db.prepare('CREATE TABLE smt_meta_data (smt_config TEXT, extra_info TEXT)').run()
+    db.prepare('INSERT INTO smt_meta_data (smt_config, extra_info) VALUES (?, ?)').run(JSON.stringify(smtConfig), JSON.stringify(extraInfo))
 
     const sqlFieldsAndTypes = fieldsList.map(f => fId2SqlId(f.id) + ' ' + fType2SqlType(f.type)).join(', ')
     db.prepare('CREATE TABLE features (geometry TEXT, geogroup_id TEXT, area REAL, geocap_x REAL, geocap_y REAL, geocap_z REAL, geocap_cosa REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
@@ -752,7 +758,7 @@ export default class QueryEngine {
     const jsonData = JSON.parse(fs.readFileSync(fileName))
     const db = new Database(dbFileName, { fileMustExist: true, timeout: 3600000 }) // 1h timeout
 
-    const smtConfig = JSON.parse(db.prepare('SELECT data from smtConfig').get().data)
+    const smtConfig = JSON.parse(db.prepare('SELECT smt_config from smt_meta_data').get().smt_config)
     const fieldsList = _.cloneDeep(smtConfig.fields)
     const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
 

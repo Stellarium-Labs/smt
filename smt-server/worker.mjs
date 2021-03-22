@@ -12,12 +12,12 @@
 import workerpool from 'workerpool'
 import QueryEngine from './query-engine.mjs'
 
-console.log('Init worker')
 var qe
 
 // The DB used to initialize the engine.
 function lasyInit(dbFileName) {
   if (qe) return
+  console.log('Init worker on DB: ' + dbFileName)
   qe = new QueryEngine(dbFileName)
 }
 
