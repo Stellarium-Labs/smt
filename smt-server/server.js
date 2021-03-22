@@ -22,12 +22,12 @@ import hash_sum from 'hash-sum'
 const SMT_SERVER_INFO = {
   version: process.env.npm_package_version || 'dev',
   dataGitServer: 'git@github.com:Stellarium-Labs/smt-data.git',
-  dataGitBranch: 'data_v01',
+  dataGitBranch: process.env.SMT_DATA_BRANCH || 'master',
   dataGitSha1: '',
   baseHashKey: ''
 }
 
-console.log('Starting SMT Server ' + SMT_SERVER_INFO.version)
+console.log('Starting SMT Server ' + SMT_SERVER_INFO.version + ' on data branch ' + SMT_SERVER_INFO.dataGitBranch)
 
 const app = express()
 app.use(cors())
