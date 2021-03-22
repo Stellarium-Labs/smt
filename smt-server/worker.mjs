@@ -10,19 +10,20 @@
 // funding from the Centre national d'études spatiales (CNES).
 
 import workerpool from 'workerpool'
-import qe from './query-engine.mjs'
+import QueryEngine from './query-engine.mjs'
 
 console.log('Init worker')
+var qe
 
 // The DB used to initialize the engine.
 function lasyInit(dbFileName) {
-  if (qe.dbFileName) return
-  qe.init(dbFileName)
+  if (qe) return
+  qe = new QueryEngine(dbFileName)
 }
 
 // Create a worker and register public functions
 workerpool.worker({
-  ingestGeoJson: function (...params) { return qe.ingestGeoJson(...params) },
+  ingestGeoJson: function (...params) { return QueryEngine.ingestGeoJson(...params) },
   query: function (...params) { lasyInit(params.shift()); return qe.query(...params) },
   getHipsTile: function (...params) { lasyInit(params.shift()); return qe.getHipsTile(...params) },
 })

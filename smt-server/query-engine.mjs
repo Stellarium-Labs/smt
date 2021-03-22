@@ -38,7 +38,7 @@ const fType2SqlType = function (fieldType) {
   return 'JSON'
 }
 
-const postProcessSQLiteResult = function (res)  {
+const postProcessSQLiteResult = function (res) {
   for (const i in res) {
     const item = res[i]
     if (typeof item === 'string' && item.startsWith('__JSON'))
@@ -46,44 +46,47 @@ const postProcessSQLiteResult = function (res)  {
   }
 }
 
-export default {
+export default class QueryEngine {
+  // Private attributes
+  #fieldsList = undefined
+  #fieldsMap = undefined
+  #db = undefined
+  #dbFileName = undefined
+  smtConfig = undefined
 
-  // All these variable are initialized by the init() function
-  fieldsList: undefined,
-  fieldsMap: undefined,
-  db: undefined,
-  dbFileName: undefined,
+  // the thread pool used to run async functions
+  static pool = undefined
 
-  init: function (dbFileName) {
+  constructor(dbFileName) {
     let that = this
     assert(fs.existsSync(dbFileName))
-    that.dbFileName = dbFileName
+    that.#dbFileName = dbFileName
     console.log('Opening existing Data Base (read only): ' + dbFileName)
     const db = new Database(dbFileName, { readonly: true });
-    const smtConfig = JSON.parse(db.prepare('SELECT data from smtConfig').get().data)
+    that.smtConfig = JSON.parse(db.prepare('SELECT data from smtConfig').get().data)
 
     // Initialize modules's attributes based on the config file
-    that.fieldsList = _.cloneDeep(smtConfig.fields)
-    that.fieldsMap = {}
-    for (let i in that.fieldsList) {
-      that.fieldsMap[that.fieldsList[i].id] = that.fieldsList[i]
-      if (that.fieldsList[i].computed) {
+    that.#fieldsList = _.cloneDeep(that.smtConfig.fields)
+    that.#fieldsMap = {}
+    for (let i in that.#fieldsList) {
+      that.#fieldsMap[that.#fieldsList[i].id] = that.#fieldsList[i]
+      if (that.#fieldsList[i].computed) {
         let options = {
           extraFunctions: { date2unix: function (dstr) { return new Date(dstr).getTime() } },
           customProp: (path, unused, obj) => _.get(obj, path, undefined)
         }
-        that.fieldsList[i].computed_compiled = filtrex.compileExpression(that.fieldsList[i].computed, options)
+        that.#fieldsList[i].computed_compiled = filtrex.compileExpression(that.#fieldsList[i].computed, options)
       }
     }
     // Add dummy entries matching our generated fields
-    that.fieldsMap['id'] = { type: 'number' }
-    that.fieldsMap['healpix_index'] = { type: 'number' }
-    that.fieldsMap['geogroup_id'] = { type: 'string' }
-    that.fieldsMap['area'] = { type: 'number' }
-    that.fieldsMap['geocap_x'] = { type: 'number' }
-    that.fieldsMap['geocap_y'] = { type: 'number' }
-    that.fieldsMap['geocap_z'] = { type: 'number' }
-    that.fieldsMap['geocap_cosa'] = { type: 'number' }
+    that.#fieldsMap['id'] = { type: 'number' }
+    that.#fieldsMap['healpix_index'] = { type: 'number' }
+    that.#fieldsMap['geogroup_id'] = { type: 'string' }
+    that.#fieldsMap['area'] = { type: 'number' }
+    that.#fieldsMap['geocap_x'] = { type: 'number' }
+    that.#fieldsMap['geocap_y'] = { type: 'number' }
+    that.#fieldsMap['geocap_z'] = { type: 'number' }
+    that.#fieldsMap['geocap_cosa'] = { type: 'number' }
 
     // Add a custom aggregation operator for the chip tags
     db.aggregate('VALUES_AND_COUNT', {
@@ -268,188 +271,19 @@ export default {
       }
     })
 
-    that.db = db
+    that.#db = db
+  }
 
-    // Initialize the thread pool used to run async functions
-    if (workerpool.isMainThread)
-      this.pool = workerpool.pool('./worker.mjs')
-  },
+  queryAsync (...parameters) {
+    return QueryEngine.pool.exec('query', [this.#dbFileName].concat(parameters))
+  }
 
-  deinit: function () {
-    if (this.pool) this.pool.terminate(false, 10000)
-  },
-
-  // A worker pool
-  pool: undefined,
-
-  queryAsync: function (...parameters) {
-    return this.pool.exec('query', [this.dbFileName].concat(parameters))
-  },
-
-  getHipsTileAsync: function (...parameters) {
-    return this.pool.exec('getHipsTile', [this.dbFileName].concat(parameters))
-  },
-
-  generateDb: function (dataDir, dbFileName) {
-    // Create the DB file and ingest everything, but dont intialize this object
-    // at all, another call to init() is necessary for this.
-    const dbAlreadyExists = fs.existsSync(dbFileName)
-    if (dbAlreadyExists) {
-      // supress previous DB
-      console.log('Suppress existind DB at: ' + dbFileName)
-      fs.unlinkSync(dbFileName)
-    }
-    console.log('Create new Data Base: ' + dbFileName)
-    const db = new Database(dbFileName)
-    const smtConfig = JSON.parse(fs.readFileSync(dataDir + '/smtConfig.json'))
-
-    // Initialize modules's attributes based on the config file
-    const fieldsList = _.cloneDeep(smtConfig.fields)
-    const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
-
-    // Initialize DB structure
-
-    // Save config file inside the DB
-    db.prepare('CREATE TABLE smtconfig (data TEXT)').run()
-    db.prepare('INSERT INTO smtconfig (data) VALUES (?)').run(JSON.stringify(smtConfig))
-
-    const sqlFieldsAndTypes = fieldsList.map(f => fId2SqlId(f.id) + ' ' + fType2SqlType(f.type)).join(', ')
-    db.prepare('CREATE TABLE features (geometry TEXT, geogroup_id TEXT, area REAL, geocap_x REAL, geocap_y REAL, geocap_z REAL, geocap_cosa REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
-    db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
-
-    db.prepare('CREATE TABLE subfeatures (id INT, geometry TEXT, geometry_rot TEXT, healpix_index INT, geogroup_id TEXT, area REAL, ' + sqlFieldsAndTypes + ')').run()
-    db.prepare('CREATE INDEX idxsub_id ON subfeatures(id)').run()
-    db.prepare('CREATE INDEX idxsub_geogroup_id ON subfeatures(geogroup_id)').run()
-    db.prepare('CREATE INDEX idxsub_healpix_index ON subfeatures(healpix_index)').run()
-
-    // Create an index on each field
-    for (let i in sqlFields) {
-      const field = sqlFields[i]
-      db.prepare('CREATE INDEX idx_' + i + ' ON features(' + field + ')').run()
-      db.prepare('CREATE INDEX idxsub_' + i + ' ON subfeatures(' + field + ')').run()
-    }
-    db.pragma('journal_mode = WAL')
-    db.close()
-
-    // Ingest all geojson files listed in the smtConfig
-    const pool = workerpool.pool('./worker.mjs')
-    const allPromise = smtConfig.sources.map(url => pool.exec('ingestGeoJson', [dbFileName, dataDir + '/' + url]))
-    return Promise.all(allPromise).then(() => pool.terminate())
-  },
-
-  // Ingest geojson file fileName into the database at dbFileName
-  ingestGeoJson: function (dbFileName, fileName) {
-    const jsonData = JSON.parse(fs.readFileSync(fileName))
-    const db = new Database(dbFileName, { fileMustExist: true, timeout: 3600000 }) // 1h timeout
-
-    const smtConfig = JSON.parse(db.prepare('SELECT data from smtConfig').get().data)
-    const fieldsList = _.cloneDeep(smtConfig.fields)
-    const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
-
-    // Compile filtrex expressions used for creating generated fields
-    for (let i in fieldsList) {
-      if (fieldsList[i].computed) {
-        const options = {
-          extraFunctions: { date2unix: function (dstr) { return new Date(dstr).getTime() } },
-          customProp: (path, unused, obj) => _.get(obj, path, undefined)
-        }
-        fieldsList[i].computed_compiled = filtrex.compileExpression(fieldsList[i].computed, options)
-      }
-    }
-
-    const quickTestMode = process.env.SMT_QUICK_TEST
-    if (quickTestMode) {
-      jsonData.features = jsonData.features.slice(0, 100)
-    }
-    console.log('Loading ' + jsonData.features.length + ' features' + (quickTestMode ? ' (quick test mode)' : ''))
-    geo_utils.normalizeGeoJson(jsonData)
-
-    // Insert all data
-    const allFeatures = []
-    turf.featureEach(jsonData, function (feature, featureIndex) {
-      if (feature.geometry.type === 'MultiPolygon') {
-        geo_utils.unionMergeMultiPolygon(feature)
-      }
-      feature.geogroup_id = _.get(feature, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
-
-      // Prepare all values to insert in SQL DB
-      const sqlValues = {}
-      for (let i = 0; i < fieldsList.length; ++i) {
-        const field = fieldsList[i]
-        let d
-        if (field.computed_compiled) {
-          d = field.computed_compiled(feature.properties)
-          if (isNaN(d)) d = undefined
-        } else {
-          d = _.get(feature.properties, field.id, undefined)
-          if (d !== undefined && field.type === 'date') {
-            d = new Date(d).getTime()
-          }
-        }
-        sqlValues[sqlFields[i]] = d
-      }
-
-      const origProperties = feature.properties
-      feature.properties = undefined
-      turf.truncate(feature, {precision: 6, coordinates: 2, mutate: true})
-      const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
-      let area = 0
-      for (let j = 0; j < newSubs.length; ++j) {
-        const subF = newSubs[j]
-        assert(subF.geometry)
-        const rotationMats = geo_utils.getHealpixRotationMats(HEALPIX_ORDER, subF.healpix_index)
-        const subFrot = _.cloneDeep(subF)
-        geo_utils.rotateGeojsonFeature(subFrot, rotationMats.m)
-        subF.area = geo_utils.featureArea(subFrot)
-        area += subF.area
-        turf.truncate(subF, {precision: 6, coordinates: 2, mutate: true})
-        subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
-        turf.truncate(subFrot, {precision: 6, coordinates: 2, mutate: true})
-        subF.geometry_rot = '__JSON' + JSON.stringify(subFrot.geometry)
-        subF.geogroup_id = feature.geogroup_id
-        _.assign(subF, sqlValues)
-      }
-      feature.properties = origProperties
-      const bCap = geo_utils.featureBoundingCap(feature)
-
-      const f = {
-        geogroup_id: feature.geogroup_id,
-        properties: '__JSON' + JSON.stringify(feature.properties),
-        geometry: '__JSON' + JSON.stringify(feature.geometry),
-        area: area,
-        geocap_x: bCap[0],
-        geocap_y: bCap[1],
-        geocap_z: bCap[2],
-        geocap_cosa: bCap[3]
-      }
-      _.assign(f, sqlValues)
-
-      allFeatures.push([f, newSubs])
-    })
-
-    // Prepare SQL insertion commands
-    const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @geocap_x, @geocap_y, @geocap_z, @geocap_cosa, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
-    const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @geometry_rot, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
-    // Perform SQL transaction
-    const insertMany = db.transaction(function (allF) {
-      for (const i in allF) {
-        const f = allF[i][0]
-        const subFs = allF[i][1]
-        // Insert one feature and get the unique rowid to assign it to the
-        // id field of the subfeatures
-        const info = insertOne.run(f)
-        for (const subF of subFs) {
-          subF.id = info.lastInsertRowid
-          insertSub.run(subF)
-        }
-      }
-    })
-    insertMany(allFeatures)
-    db.close()
-  },
+  getHipsTileAsync (...parameters) {
+    return QueryEngine.pool.exec('getHipsTile', [this.#dbFileName].concat(parameters))
+  }
 
   // Construct the SQL WHERE clause matching the given constraints
-  constraints2SQLWhereClause: function (constraints) {
+  constraints2SQLWhereClause (constraints) {
     let that = this
     if (!constraints || constraints.length === 0) {
       return ''
@@ -482,7 +316,7 @@ export default {
         return '( ' + fid + ' IS NOT NULL AND ' + fid + ' >= ' + c.expression[0] +
           ' AND ' + fid + ' <= ' + c.expression[1] + ')'
       } else if (c.operation === 'IN') {
-        let fType = that.fieldsMap[c.fieldId] ? that.fieldsMap[c.fieldId].type : undefined
+        let fType = that.#fieldsMap[c.fieldId] ? that.#fieldsMap[c.fieldId].type : undefined
         if (fType === 'string') {
           return '( ' + fid + ' IN (' + c.expression.map(e => "'" + e + "'").join(', ') + ') )'
         } else {
@@ -509,10 +343,10 @@ export default {
       }
     }
     return whereClause
-  },
+  }
 
   // Construct the SQL GROUP BY clause matching the given groupingOptions
-  groupingOptions2SQLGroupByClause: function (groupingOptions) {
+  groupingOptions2SQLGroupByClause (groupingOptions) {
     if (!groupingOptions || groupingOptions.length === 0) {
       return ''
     }
@@ -536,14 +370,14 @@ export default {
       throw new Error('Unsupported grouping operation: ' + groupingOptions[0].operation)
     }
     return ''
-  },
+  }
 
-  getDateMinMaxStep: function (q, fieldId, minSteps) {
+  getDateMinMaxStep (q, fieldId, minSteps) {
     let whereClause = this.constraints2SQLWhereClause(q.constraints)
     const fid = fId2SqlId(fieldId)
     const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
     const req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax FROM features ' + wc
-    const res = this.db.prepare(req).get()
+    const res = this.#db.prepare(req).get()
     postProcessSQLiteResult(res)
     let start = new Date(res.dmin)
     start.setUTCHours(0, 0, 0, 0)
@@ -577,14 +411,14 @@ export default {
       max: stop,
       step: step
     }
-  },
+  }
 
-  getNumberMinMaxStep: function (q, fieldId, nbCol) {
+  getNumberMinMaxStep (q, fieldId, nbCol) {
     let whereClause = this.constraints2SQLWhereClause(q.constraints)
     const fid = fId2SqlId(fieldId)
     const wc = (whereClause === '') ? ' WHERE ' + fid + ' IS NOT NULL' : whereClause + ' AND ' + fid + ' IS NOT NULL'
     const req = 'SELECT MIN(' + fid + ') AS dmin, MAX(' + fid + ') AS dmax FROM features ' + wc
-    const res = this.db.prepare(req).get()
+    const res = this.#db.prepare(req).get()
     postProcessSQLiteResult(res)
     let step = 1
     if (res.dmin === res.dmax) {
@@ -599,10 +433,10 @@ export default {
       max: res.dmax,
       step: step
     }
-  },
+  }
 
   // Query the engine
-  query: function (q) {
+  query (q) {
     let that = this
     let whereClause = this.constraints2SQLWhereClause(q.constraints)
 
@@ -738,7 +572,7 @@ export default {
     let res = [{}]
     if (selectClause.length) {
       const sqlStatement = 'SELECT ' + selectClause.join(', ') + ' ' + fromClause + whereClause
-      res = that.db.prepare(sqlStatement).all()
+      res = that.#db.prepare(sqlStatement).all()
     }
     for (let i in res) {
       // Post-process each resulting line
@@ -746,14 +580,14 @@ export default {
       if (q.aggregationOptions) postProcessAggResultLine(res[i])
     }
     return { q: q, res: res }
-  },
+  }
 
-  getHipsProperties: function () {
+  getHipsProperties () {
     return `hips_tile_format = geojson\nhips_order = 2\nhips_order_min = 1` +
         '\nhips_tile_width = 400\nobs_title = SMT Geojson'
-  },
+  }
 
-  getHipsTile: function (q, order, tileId) {
+  getHipsTile (q, order, tileId) {
     const that = this
     // Can be 0: lowest details, only plain healpix tiles shapes
     //        1: medium details, the union of all footprints per tile
@@ -779,8 +613,8 @@ export default {
 
     // Construct the SQL SELECT clause matching the given aggregate options
     let selectClause = 'SELECT '
-    selectClause += this.fieldsList.filter(f => f.widget !== 'tags').map(f => fId2SqlId(f.id)).map(k => 'MIN_MAX(' + k + ') as ' + k).join(', ')
-    selectClause += ', ' + this.fieldsList.filter(f => f.widget === 'tags').map(f => fId2SqlId(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ', 10) as ' + k).join(', ')
+    selectClause += this.#fieldsList.filter(f => f.widget !== 'tags').map(f => fId2SqlId(f.id)).map(k => 'MIN_MAX(' + k + ') as ' + k).join(', ')
+    selectClause += ', ' + this.#fieldsList.filter(f => f.widget === 'tags').map(f => fId2SqlId(f.id)).map(k => 'VALUES_AND_COUNT(' + k + ', 10) as ' + k).join(', ')
     selectClause += ', COUNT(*) as c, healpix_index ' + (LOD_LEVEL === 0 ? '' : ', geogroup_id, geometry ') + 'FROM subfeatures '
     let sqlStatement = selectClause + whereClause
     if (tileId !== -1) {
@@ -791,7 +625,7 @@ export default {
     } else {
       sqlStatement += ' GROUP BY id'
     }
-    const stmt = that.db.prepare(sqlStatement)
+    const stmt = that.#db.prepare(sqlStatement)
     let res = stmt.all()
     res = res.filter(f => f.c)
     const geojson = {
@@ -815,16 +649,16 @@ export default {
       geojson.features.push(feature)
     }
     return geojson.features.length ? geojson : undefined
-  },
+  }
 
-  computeArea: function (q) {
+  computeArea (q) {
     let whereClause = this.constraints2SQLWhereClause(q.constraints)
     let sqlStatement = 'SELECT SUM(area) as area FROM (SELECT GEO_UNION_AREA_ON_HEALPIX(healpix_index, geometry_rot, area) as area FROM subfeatures ' + whereClause + ' GROUP BY healpix_index)'
-    let res = this.db.prepare(sqlStatement).get()
+    let res = this.#db.prepare(sqlStatement).get()
     return res.area
-  },
+  }
 
-  computeAreaCumulatedDateHistogram: function (q, agOpt) {
+  computeAreaCumulatedDateHistogram (q, agOpt) {
     if (!agOpt.dateFieldId) {
       throw new Error('GEO_UNION_AREA_CUMULATED_DATE_HISTOGRAM require a dateFieldId parameter')
     }
@@ -840,7 +674,7 @@ export default {
     }[agOpt.step]
     const binFunc = 'STRFTIME(\'' + step + '\', ROUND(' + dateFid + '/1000), \'unixepoch\')'
     let sqlStatement = 'SELECT GEO_UNION_AREA_ON_HEALPIX_CUMULATED_HISTOGRAM(healpix_index, geometry_rot, area, ' + binFunc + ') as areaHisto FROM subfeatures ' + whereClause + ' GROUP BY healpix_index'
-    let res = this.db.prepare(sqlStatement).all()
+    let res = this.#db.prepare(sqlStatement).all()
     // Combine the cumulated histograms of all healpix pixels
     res = res.map(line => JSON.parse(line.areaHisto.substring(6)))
     let allKeys = new Set()
@@ -865,4 +699,171 @@ export default {
     }
     return histo
   }
+
+  static generateDb (dataDir, dbFileName) {
+    // Create the DB file and ingest everything, but dont intialize this object
+    // at all, another call to init() is necessary for this.
+    const dbAlreadyExists = fs.existsSync(dbFileName)
+    if (dbAlreadyExists) {
+      // supress previous DB
+      console.log('Suppress existing DB at: ' + dbFileName)
+      fs.unlinkSync(dbFileName)
+    }
+    console.log('Create new Data Base: ' + dbFileName)
+    const db = new Database(dbFileName)
+    const smtConfig = JSON.parse(fs.readFileSync(dataDir + '/smtConfig.json'))
+
+    // Initialize modules's attributes based on the config file
+    const fieldsList = _.cloneDeep(smtConfig.fields)
+    const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
+
+    // Initialize DB structure
+
+    // Save config file inside the DB
+    db.prepare('CREATE TABLE smtconfig (data TEXT)').run()
+    db.prepare('INSERT INTO smtconfig (data) VALUES (?)').run(JSON.stringify(smtConfig))
+
+    const sqlFieldsAndTypes = fieldsList.map(f => fId2SqlId(f.id) + ' ' + fType2SqlType(f.type)).join(', ')
+    db.prepare('CREATE TABLE features (geometry TEXT, geogroup_id TEXT, area REAL, geocap_x REAL, geocap_y REAL, geocap_z REAL, geocap_cosa REAL, properties TEXT, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE INDEX idx_geogroup_id ON features(geogroup_id)').run()
+
+    db.prepare('CREATE TABLE subfeatures (id INT, geometry TEXT, geometry_rot TEXT, healpix_index INT, geogroup_id TEXT, area REAL, ' + sqlFieldsAndTypes + ')').run()
+    db.prepare('CREATE INDEX idxsub_id ON subfeatures(id)').run()
+    db.prepare('CREATE INDEX idxsub_geogroup_id ON subfeatures(geogroup_id)').run()
+    db.prepare('CREATE INDEX idxsub_healpix_index ON subfeatures(healpix_index)').run()
+
+    // Create an index on each field
+    for (let i in sqlFields) {
+      const field = sqlFields[i]
+      db.prepare('CREATE INDEX idx_' + i + ' ON features(' + field + ')').run()
+      db.prepare('CREATE INDEX idxsub_' + i + ' ON subfeatures(' + field + ')').run()
+    }
+    db.pragma('journal_mode = WAL')
+    db.close()
+
+    // Ingest all geojson files listed in the smtConfig
+    const pool = workerpool.pool('./worker.mjs')
+    const allPromise = smtConfig.sources.map(url => pool.exec('ingestGeoJson', [dbFileName, dataDir + '/' + url]))
+    return Promise.all(allPromise).then(() => pool.terminate())
+  }
+
+  // Ingest geojson file fileName into the database at dbFileName
+  static ingestGeoJson (dbFileName, fileName) {
+    const jsonData = JSON.parse(fs.readFileSync(fileName))
+    const db = new Database(dbFileName, { fileMustExist: true, timeout: 3600000 }) // 1h timeout
+
+    const smtConfig = JSON.parse(db.prepare('SELECT data from smtConfig').get().data)
+    const fieldsList = _.cloneDeep(smtConfig.fields)
+    const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
+
+    // Compile filtrex expressions used for creating generated fields
+    for (let i in fieldsList) {
+      if (fieldsList[i].computed) {
+        const options = {
+          extraFunctions: { date2unix: function (dstr) { return new Date(dstr).getTime() } },
+          customProp: (path, unused, obj) => _.get(obj, path, undefined)
+        }
+        fieldsList[i].computed_compiled = filtrex.compileExpression(fieldsList[i].computed, options)
+      }
+    }
+
+    const quickTestMode = process.env.SMT_QUICK_TEST
+    if (quickTestMode) {
+      jsonData.features = jsonData.features.slice(0, 100)
+    }
+    console.log('Loading ' + jsonData.features.length + ' features' + (quickTestMode ? ' (quick test mode)' : ''))
+    geo_utils.normalizeGeoJson(jsonData)
+
+    // Insert all data
+    const allFeatures = []
+    turf.featureEach(jsonData, function (feature, featureIndex) {
+      if (feature.geometry.type === 'MultiPolygon') {
+        geo_utils.unionMergeMultiPolygon(feature)
+      }
+      feature.geogroup_id = _.get(feature, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
+
+      // Prepare all values to insert in SQL DB
+      const sqlValues = {}
+      for (let i = 0; i < fieldsList.length; ++i) {
+        const field = fieldsList[i]
+        let d
+        if (field.computed_compiled) {
+          d = field.computed_compiled(feature.properties)
+          if (isNaN(d)) d = undefined
+        } else {
+          d = _.get(feature.properties, field.id, undefined)
+          if (d !== undefined && field.type === 'date') {
+            d = new Date(d).getTime()
+          }
+        }
+        sqlValues[sqlFields[i]] = d
+      }
+
+      const origProperties = feature.properties
+      feature.properties = undefined
+      turf.truncate(feature, {precision: 6, coordinates: 2, mutate: true})
+      const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
+      let area = 0
+      for (let j = 0; j < newSubs.length; ++j) {
+        const subF = newSubs[j]
+        assert(subF.geometry)
+        const rotationMats = geo_utils.getHealpixRotationMats(HEALPIX_ORDER, subF.healpix_index)
+        const subFrot = _.cloneDeep(subF)
+        geo_utils.rotateGeojsonFeature(subFrot, rotationMats.m)
+        subF.area = geo_utils.featureArea(subFrot)
+        area += subF.area
+        turf.truncate(subF, {precision: 6, coordinates: 2, mutate: true})
+        subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
+        turf.truncate(subFrot, {precision: 6, coordinates: 2, mutate: true})
+        subF.geometry_rot = '__JSON' + JSON.stringify(subFrot.geometry)
+        subF.geogroup_id = feature.geogroup_id
+        _.assign(subF, sqlValues)
+      }
+      feature.properties = origProperties
+      const bCap = geo_utils.featureBoundingCap(feature)
+
+      const f = {
+        geogroup_id: feature.geogroup_id,
+        properties: '__JSON' + JSON.stringify(feature.properties),
+        geometry: '__JSON' + JSON.stringify(feature.geometry),
+        area: area,
+        geocap_x: bCap[0],
+        geocap_y: bCap[1],
+        geocap_z: bCap[2],
+        geocap_cosa: bCap[3]
+      }
+      _.assign(f, sqlValues)
+
+      allFeatures.push([f, newSubs])
+    })
+
+    // Prepare SQL insertion commands
+    const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @geocap_x, @geocap_y, @geocap_z, @geocap_cosa, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+    const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @geometry_rot, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+    // Perform SQL transaction
+    const insertMany = db.transaction(function (allF) {
+      for (const i in allF) {
+        const f = allF[i][0]
+        const subFs = allF[i][1]
+        // Insert one feature and get the unique rowid to assign it to the
+        // id field of the subfeatures
+        const info = insertOne.run(f)
+        for (const subF of subFs) {
+          subF.id = info.lastInsertRowid
+          insertSub.run(subF)
+        }
+      }
+    })
+    insertMany(allFeatures)
+    db.close()
+  }
+
+  static deinit () {
+    if (QueryEngine.pool) QueryEngine.pool.terminate(false, 10000)
+  }
+}
+
+// Initialize the thread pool used to run async functions
+if (workerpool.isMainThread) {
+  QueryEngine.pool = workerpool.pool('./worker.mjs')
 }

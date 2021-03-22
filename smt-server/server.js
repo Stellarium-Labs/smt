@@ -14,7 +14,7 @@ import cors from 'cors'
 import fsp from 'fs/promises'
 import fs from 'fs'
 import _ from 'lodash'
-import qe from './query-engine.mjs'
+import QueryEngine from './query-engine.mjs'
 import bodyParser from 'body-parser'
 import NodeGit from 'nodegit'
 import hash_sum from 'hash-sum'
@@ -24,7 +24,8 @@ const SMT_SERVER_INFO = {
   dataGitServer: 'git@github.com:Stellarium-Labs/smt-data.git',
   dataGitBranch: process.env.SMT_DATA_BRANCH || 'master',
   dataGitSha1: '',
-  baseHashKey: ''
+  baseHashKey: '',
+  status: 'starting'
 }
 
 console.log('Starting SMT Server ' + SMT_SERVER_INFO.version + ' on data branch ' + SMT_SERVER_INFO.dataGitBranch)
@@ -41,8 +42,6 @@ process.on('SIGINT', () => {
 
 const port = process.env.PORT || 8100
 const __dirname = process.cwd()
-
-var smtConfig
 
 const syncGitData = async function (gitServer, gitBranch) {
   const localPath = __dirname + '/data'
@@ -111,69 +110,63 @@ const getSmtServerSourceCodeHash = async function () {
   return extraVersionHash
 }
 
-const initServer = async function (dbFileName) {
-  const extraVersionHash = await getSmtServerSourceCodeHash()
-  const ret = await syncGitData(SMT_SERVER_INFO.dataGitServer, SMT_SERVER_INFO.dataGitBranch)
-  SMT_SERVER_INFO.dataGitSha1 = ret.dataGitSha1
-  SMT_SERVER_INFO.dataLocalModifications = ret.modified
 
-  // Compute the base hash key which is unique for a given version of the server
-  // code and data. It will be used to generate cache-friendly URLs.
-  let baseHashKey = SMT_SERVER_INFO.dataGitSha1 + extraVersionHash
-  if (SMT_SERVER_INFO.dataLocalModifications)
-    baseHashKey += '_' + Date.now()
-  SMT_SERVER_INFO.baseHashKey = hash_sum(baseHashKey)
-  console.log('Server base hash key: ' + SMT_SERVER_INFO.baseHashKey)
+const extraVersionHash = await getSmtServerSourceCodeHash()
+const ret = await syncGitData(SMT_SERVER_INFO.dataGitServer, SMT_SERVER_INFO.dataGitBranch)
+SMT_SERVER_INFO.dataGitSha1 = ret.dataGitSha1
+SMT_SERVER_INFO.dataLocalModifications = ret.modified
 
-  // Now that all files are up-to-date, load the server config
-  smtConfig = JSON.parse(fs.readFileSync(__dirname + '/data/smtConfig.json'))
+// Compute the base hash key which is unique for a given version of the server
+// code and data. It will be used to generate cache-friendly URLs.
+let baseHashKey = SMT_SERVER_INFO.dataGitSha1 + extraVersionHash
+if (SMT_SERVER_INFO.dataLocalModifications)
+  baseHashKey += '_' + Date.now()
+SMT_SERVER_INFO.baseHashKey = hash_sum(baseHashKey)
+console.log('Server base hash key: ' + SMT_SERVER_INFO.baseHashKey)
 
-  // Check if we can preserve the previous DB to avoid re-loading the whole DB
-  let reloadGeojson = true
-  const dbAlreadyExists = fs.existsSync(dbFileName)
-  if (dbAlreadyExists) {
-    try {
-      const lastDBbHashKey = fs.readFileSync(dbFileName + '-HashKey.txt', 'utf8').trim()
-      if (lastDBbHashKey === SMT_SERVER_INFO.baseHashKey ||
-          lastDBbHashKey === 'dontReloadGeojson') {
-        reloadGeojson = false
-      } else {
-        // Code and/or data changed, supress previous DB
-        fs.unlinkSync(dbFileName)
-      }
-    } catch (err) {
+const dbFileName = __dirname + '/qe.db'
+// Check if we can preserve the previous DB to avoid re-loading the whole DB
+let reloadGeojson = true
+const dbAlreadyExists = fs.existsSync(dbFileName)
+if (dbAlreadyExists) {
+  try {
+    const lastDBbHashKey = fs.readFileSync(dbFileName + '-HashKey.txt', 'utf8').trim()
+    if (lastDBbHashKey === SMT_SERVER_INFO.baseHashKey ||
+        lastDBbHashKey === 'dontReloadGeojson') {
+      reloadGeojson = false
+    } else {
+      // Code and/or data changed, supress previous DB
       fs.unlinkSync(dbFileName)
     }
-  }
-
-  // And start listening to connection while the DB is being filled
-  app.listen(port, () => {
-    console.log(`SMT Server listening at http://localhost:${port}`)
-  })
-
-  if (reloadGeojson) {
-    console.log('Data or code has changed since last start: reload geojson')
-    await qe.generateDb(__dirname + '/data/', dbFileName)
-    console.log('*** DB Loading finished ***')
-    fs.writeFileSync(dbFileName + '-HashKey.txt', SMT_SERVER_INFO.baseHashKey)
-  } else {
-    console.log('No data/code change since last start: reload previous DB')
+  } catch (err) {
+    fs.unlinkSync(dbFileName)
   }
 }
 
-const dbFileName = __dirname + '/qe.db'
-// Re-open the previous DB if nothing changed, or create and ingest everything
-await initServer(dbFileName)
+// And start listening to connection while the DB is being filled
+app.listen(port, () => {
+  console.log(`SMT Server listening at http://localhost:${port}`)
+})
+
+if (reloadGeojson) {
+  console.log('Data or code has changed since last start: reload geojson')
+  await QueryEngine.generateDb(__dirname + '/data/', dbFileName)
+  console.log('*** DB Loading finished ***')
+  fs.writeFileSync(dbFileName + '-HashKey.txt', SMT_SERVER_INFO.baseHashKey)
+} else {
+  console.log('No data/code change since last start: reload previous DB')
+}
+
 
 // Initialize the read-only engine
-qe.init(dbFileName)
+const qe = new QueryEngine(dbFileName)
 
 app.get('/api/v1/smtServerInfo', (req, res) => {
   res.send(SMT_SERVER_INFO)
 })
 
 app.get('/api/v1/smtConfig', (req, res) => {
-  res.send(JSON.stringify(smtConfig))
+  res.send(qe.smtConfig)
 })
 
 // Global storage of hash -> query for later lookup

@@ -10,7 +10,7 @@
 // funding from the Centre national d'études spatiales (CNES).
 
 
-import qe from './query-engine.mjs'
+import QueryEngine from './query-engine.mjs'
 import geo_utils from './geojson-utils.mjs'
 
 // Allow to catch CTRL+C when runnning inside a docker
@@ -23,7 +23,7 @@ const __dirname = process.cwd()
 const dbFileName = __dirname + '/qe.db'
 
 // Initialize the read-only engine
-qe.init(dbFileName)
+const qe = new QueryEngine(dbFileName)
 
 const queries = [
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"COUNT","out":"total"}]},
@@ -31,8 +31,7 @@ const queries = [
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"VALUES_AND_COUNT","fieldId":"TelescopeName","out":"tags"}]},
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"VALUES_AND_COUNT","fieldId":"InputsStatus","out":"tags"}]},
   {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"VALUES_AND_COUNT","fieldId":"SurveyId","out":"tags"}]},
-  {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA","out":"area"}]},
-  {"constraints":[],"groupingOptions":[{"operation":"GROUP_BY_DATE", "fieldId": "CreationDate", "step": "year"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA_CUMULATED","out":"hist"}]}
+  {"constraints":[],"groupingOptions":[{"operation":"GROUP_ALL"}],"aggregationOptions":[{"operation":"GEO_UNION_AREA","out":"area"}]}
 ]
 
 for (let i in queries) {
@@ -44,4 +43,4 @@ for (let i in queries) {
   }
   console.log('query %d: %d ms', i, new Date() - start)
 }
-qe.deinit()
+QueryEngine.deinit()
