@@ -31,7 +31,7 @@
     </v-card>
   </v-dialog>
   <v-spacer></v-spacer>
-<!--  <v-progress-circular v-if="$store.state.SMT.status === 'loading'" size=18 indeterminate></v-progress-circular>-->
+  <v-progress-circular v-if="$store.state.SMT.status !== 'ready'" size=18 indeterminate></v-progress-circular>
   <span class="px-2">Server {{ $store.state.SMT.status }}</span>
   <v-btn icon class="transparent" @click.stop="dialog = true"><v-icon>mdi-information-outline</v-icon></v-btn>
 </v-toolbar>
@@ -47,9 +47,6 @@ export default {
     }
   },
   methods: {
-    showSMTServerInfo: function () {
-
-    }
   },
   computed: {
   }

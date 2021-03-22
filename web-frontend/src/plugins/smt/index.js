@@ -14,8 +14,6 @@ import storeModule from './store'
 import Vue from 'vue'
 import VueGoogleCharts from 'vue-google-charts'
 import qe from './query-engine'
-import filtrex from 'filtrex'
-import sprintfjs from 'sprintf-js'
 import vuetify from '@/plugins/vuetify'
 import VuetifyDialog from 'vuetify-dialog'
 import 'vuetify-dialog/dist/vuetify-dialog.css'
@@ -34,7 +32,7 @@ export default {
   panelRoutes: [
     { path: '/p/smt', component: SmtLayerPage, meta: { tabName: 'Survey Tool', prio: 1 } }
   ],
-  onEngineReady: function (app) {
+  onEngineReady: async function (app) {
     app.$store.commit('setValue', { varName: 'SMT.status', newValue: 'initializing' })
 
     // Init base view settings
@@ -81,27 +79,16 @@ export default {
     core.dsos.addDataSource({ url: doUrl + 'swe-data-packs/extended/2020-03-11/extended_2020-03-11_26aa5ab8/dso' })
     app.dataSourceInitDone = true
 
-    return qe.init().then(smtConfig => {
-      const filtrexOptions = {
-        extraFunctions: { sprintf: (fmt, x) => sprintfjs.sprintf(fmt, x) }
-      }
-      for (const field of smtConfig.fields) {
-        if (field.formatFunc) {
-          field.formatFuncCompiled = filtrex.compileExpression(field.formatFunc, filtrexOptions)
+    const statusChangedCb = function (status) {
+      if (status === 'ready') {
+        Vue.prototype.$smt = qe.smtConfig
+        app.$store.commit('setValue', { varName: 'SMT.smtServerInfo', newValue: qe.smtServerInfo })
+        if (qe.smtConfig.watermarkImage) {
+          app.$store.commit('setValue', { varName: 'SMT.watermarkImage', newValue: qe.smtConfig.watermarkImage })
         }
       }
-
-      Vue.prototype.$smt = smtConfig
-
-      app.$store.commit('setValue', { varName: 'SMT.smtServerInfo', newValue: qe.smtServerInfo })
-      if (smtConfig.watermarkImage) {
-        app.$store.commit('setValue', { varName: 'SMT.watermarkImage', newValue: smtConfig.watermarkImage })
-      }
-      app.$store.commit('setValue', { varName: 'SMT.status', newValue: 'ready' })
-    },
-    err => {
-      app.$store.commit('setValue', { varName: 'SMT.status', newValue: 'error' })
-      throw err
-    })
+      app.$store.commit('setValue', { varName: 'SMT.status', newValue: status })
+    }
+    await qe.init(statusChangedCb)
   }
 }

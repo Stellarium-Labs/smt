@@ -273,8 +273,6 @@ export default {
               const key = Object.keys(res.res[0].tags)[0]
               that.results.implicitConstraints.push({ fieldId: field.id, field: field, expression: key, closable: false, color: field.id === that.colorAssignedField.id ? that.cssColorForTag(key) : undefined })
             }
-          }, err => {
-            console.log(err)
           })
         }
         if (field.widget === 'date_range') {

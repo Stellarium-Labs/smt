@@ -119,7 +119,9 @@ export default {
   watch: {
     '$store.state.SMT.status': function () {
       if (this.$store.state.SMT.status === 'ready') {
-        this.addLayer('Layer 1')
+        if (this.layersList.length === 0) {
+          this.addLayer('Layer 1')
+        }
       }
     }
   },

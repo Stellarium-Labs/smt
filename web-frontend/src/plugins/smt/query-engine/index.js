@@ -12,35 +12,78 @@
 import marked from 'marked'
 import stableStringify from 'json-stable-stringify'
 import _ from 'lodash'
+import filtrex from 'filtrex'
+import sprintfjs from 'sprintf-js'
+
+function sleep (ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
 
 export default {
-  fieldsList: undefined,
   smtServerInfo: undefined,
+  status: 'unknown',
+  statusChangedCb: undefined,
 
-  init: async function () {
-    const that = this
-
-    let resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/smtServerInfo', {
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json'
-      }
-    })
-    that.smtServerInfo = await resp.json()
-
-    resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/smtConfig', {
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json'
-      }
-    })
-    const smtConfig = await resp.json()
-    for (const f of smtConfig.fields) {
-      f.description_html = marked(f.description)
+  getServerStatus: async function () {
+    try {
+      const resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/status', {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+      return (await resp.json()).status || 'error'
+    } catch (err) {
+      return 'error'
     }
-    that.fieldsList = smtConfig.fields
+  },
 
-    return smtConfig
+  updateStatus: async function () {
+    this.setStatus(await this.getServerStatus())
+  },
+
+  setStatus: async function (s) {
+    if (this.status === s) return
+
+    if (s === 'ready') {
+      // The status just went to ready, update server information
+      let resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/smtServerInfo', {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+      this.smtServerInfo = await resp.json()
+
+      resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/smtConfig', {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+      this.smtConfig = await resp.json()
+      const filtrexOptions = {
+        extraFunctions: { sprintf: (fmt, x) => sprintfjs.sprintf(fmt, x) }
+      }
+      for (const f of this.smtConfig.fields) {
+        f.description_html = marked(f.description)
+        if (f.formatFunc) {
+          f.formatFuncCompiled = filtrex.compileExpression(f.formatFunc, filtrexOptions)
+        }
+      }
+    }
+
+    this.status = s
+    if (this.statusChangedCb) this.statusChangedCb(s)
+  },
+
+  init: async function (statusChangedCb) {
+    if (statusChangedCb) this.statusChangedCb = statusChangedCb
+    while (true) {
+      await this.setStatus(await this.getServerStatus())
+      if (this.status === 'ready') break
+      await sleep(3000)
+    }
   },
 
   queryToString: function (q) {
@@ -53,33 +96,45 @@ export default {
     return stableStringify(q2)
   },
 
-  query: function (q) {
-    const that = this
-    console.assert(that.smtServerInfo.baseHashKey)
-    const body = encodeURIComponent(this.queryToString(q))
-    return fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + that.smtServerInfo.baseHashKey + '/query?q=' + body, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json'
+  query: async function (q) {
+    try {
+      console.assert(this.smtServerInfo.baseHashKey)
+      const body = encodeURIComponent(this.queryToString(q))
+      const response = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.smtServerInfo.baseHashKey + '/query?q=' + body, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+      if (response.status !== 200) {
+        throw response.status
       }
-    }).then(function (response) {
       return response.json()
-    })
+    } catch (err) {
+      this.init()
+      throw err
+    }
   },
 
-  queryVisual: function (q) {
-    const that = this
-    console.assert(that.smtServerInfo.baseHashKey)
-    const body = encodeURIComponent(stableStringify(q))
-    return fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + that.smtServerInfo.baseHashKey + '/queryVisual?q=' + body, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json'
+  queryVisual: async function (q) {
+    try {
+      console.assert(this.smtServerInfo.baseHashKey)
+      const body = encodeURIComponent(stableStringify(q))
+      const response = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.smtServerInfo.baseHashKey + '/queryVisual?q=' + body, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+      if (response.status !== 200) {
+        throw response.status
       }
-    }).then(function (response) {
       return response.text()
-    })
+    } catch (err) {
+      this.init()
+      throw err
+    }
   }
 }
