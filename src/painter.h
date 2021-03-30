@@ -101,6 +101,7 @@ struct renderer
                     double           angle);
 
     void (*text)(renderer_t      *rend,
+                 const painter_t *painter,
                  const char      *text,
                  const double    pos[2],
                  int             align,
@@ -178,6 +179,8 @@ enum {
 
     // Passed to paint_lines.
     PAINTER_SKIP_DISCONTINUOUS  = 1 << 10,
+    // Allow the renderer to reorder this item for batch optimiziation.
+    PAINTER_ALLOW_REORDER       = 1 << 11,
 };
 
 enum {
@@ -394,12 +397,11 @@ int paint_text_bounds(const painter_t *painter, const char *text,
  *   align      - Union of <ALIGN_FLAGS>.
  *   effects    - Union of <TEXT_EFFECT_FLAGS>.
  *   size       - Text size in window unit.
- *   color      - RGBA color.
  *   angle      - Angle in radian.
  */
 int paint_text(const painter_t *painter,
                const char *text, const double pos[2], int align,
-               int effects, double size, const double color[4], double angle);
+               int effects, double size, double angle);
 
 /*
  * Function: paint_texture

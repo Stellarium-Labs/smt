@@ -43,7 +43,7 @@ static void points(renderer_t *rend_, const painter_t *painter,
     const double scale = 320;
     for (i = 0; i < n; i++) {
         p = points[i];
-        if (!project(painter->proj, PROJ_TO_NDC_SPACE, pos, pos)) continue;
+        if (!project(painter->proj, 0, pos, pos)) continue;
         pos[0] = (pos[0] + 1.0) * scale;
         pos[1] = (pos[1] + 1.0) * scale;
         fprintf(rend->out,
@@ -53,7 +53,8 @@ static void points(renderer_t *rend_, const painter_t *painter,
     }
 }
 
-static void text(renderer_t *rend_, const char *text, const double pos[2],
+static void text(renderer_t *rend_, const painter_t *painter,
+                 const char *text, const double pos[2],
                  int align, int effects, double size, const double color[4],
                  double angle, double bounds[4])
 {

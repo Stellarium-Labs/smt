@@ -175,6 +175,34 @@ void refraction_prepare(double phpa, double tc, double rh,
  */
 int l12(double tt1, double tt2, int ks, double pv[2][3]);
 
+
+/* Tass1.7 model of Saturnian Satellites.
+ *
+ * Parameters:
+ *   body - integer in the list:
+ *      MIMAS     0
+ *      ENCELADUS 1
+ *      TETHYS    2
+ *      DIONE     3
+ *      RHEA      4
+ *      TITAN     5
+ *      IAPETUS   6
+ *      HYPERION  7
+ */
+void tass17(double jd, int body, double xyz[3], double xyzdot[3]);
+
+/* Gust86 model of Uranus Satellites.
+ *
+ * Parameters:
+ *   body - integer in the list:
+ *      MIRANDA   0
+ *      ARIEL     1
+ *      UMBRIEL   2
+ *      TITANIA   3
+ *      OBERON    4
+ */
+void gust86(double jd, int body, double xyz[3], double xyzdot[3]);
+
 /*
  * Find which constellation a point is located in.
  *

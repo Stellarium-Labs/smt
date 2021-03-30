@@ -20,6 +20,7 @@
 #endif
 
 typedef struct projection projection_t;
+typedef struct projection_klass projection_klass_t;
 
 /******** Section: Projection *******************************************/
 
@@ -41,10 +42,6 @@ enum {
  * Modify the behavior of the <project> function.
  */
 enum {
-    PROJ_NO_CLIP            = 1 << 0,
-    PROJ_BACKWARD           = 1 << 1,
-    PROJ_TO_NDC_SPACE       = 1 << 2,
-
     PROJ_TO_WINDOW_SPACE    = 1 << 3,
     PROJ_FROM_WINDOW_SPACE  = 1 << 3,
 
@@ -67,27 +64,39 @@ enum {
  */
 struct projection
 {
-    const char *name;
+    projection_klass_t *klass;
     double scaling[2];
     double fovx;
     int flags;
-    int type;
 
     // Matrices used by some projections.
     double mat[4][4];
     // Window size (screen size / screen density).
     double window_size[2];
+};
 
+struct projection_klass
+{
+    int id;
+    const char *name;
     // Maximum FOV value we can accept.
     double max_fov;
     // Maximum FOV that looks good for the UI.
     double max_ui_fov;
-
+    void (*init)(projection_t *proj, double fovx, double aspect);
     void (*project)(const projection_t *proj, int flags,
                     const double v[S 4], double out[S 4]);
     bool (*backward)(const projection_t *proj, int flags,
                      const double v[S 2], double out[4]);
+    void (*compute_fovs)(int proj_type, double fov, double aspect,
+                         double *fovx, double *fovy);
 };
+
+#define PROJECTION_REGISTER(klass) \
+    static void proj_register_##klass##_(void) __attribute__((constructor)); \
+    static void proj_register_##klass##_(void) { proj_register_(&klass); }
+void proj_register_(projection_klass_t *klass);
+
 
 /*
  * Function: projection_compute_fovs
@@ -124,8 +133,7 @@ void projection_init(projection_t *proj, int type, double fovx,
  *
  * If we project forward (without the PROJ_BACKWARD) flag, the projection
  * expects a 4d input, and return the coordinates in the plane clipping space.
- * To get normalized device space coordinates, we can use the
- * PROJ_TO_NDC_SPACE flag.  To get windows coordinates, we can use the
+ * To get windows coordinates, we can use the
  * PROJ_TO_WINDOWS_SPACE flag.
  *
  * Parameters:
@@ -137,6 +145,24 @@ void projection_init(projection_t *proj, int type, double fovx,
  */
 bool project(const projection_t *proj, int flags,
              const double v[S 4], double out[S 4]);
+
+/*
+ * Function: unproject
+ * Compute a backward projection
+ *
+ * Parameters:
+ *   proj   - A projection.
+ *   flags  - Union of <PROJ_FLAGS> value.  We can use `FROM_WINDOW_SPACE`
+ *            to specify that the inputs is in window coordinates.
+ *            By default we unproject from clipping space.
+ *   v      - Input coordinates.
+ *   out    - Output coordinates.
+ *
+ * Return:
+ *   True for success.
+ */
+bool unproject(const projection_t *proj, int flags,
+               const double v[S 4], double out[S 4]);
 
 #undef S
 

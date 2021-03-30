@@ -200,17 +200,17 @@ int paint_text_bounds(const painter_t *painter, const char *text,
                       const double pos[2], int align, int effects,
                       double size, double bounds[4])
 {
-    REND(painter->rend, text, text, pos, align, effects, size, NULL, 0,
-         bounds);
+    REND(painter->rend, text, painter, text, pos, align, effects, size,
+         painter->color, 0, bounds);
     return 0;
 }
 
 int paint_text(const painter_t *painter, const char *text,
                const double pos[2], int align, int effects, double size,
-               const double color[4], double angle)
+               double angle)
 {
-    REND(painter->rend, text, text, pos, align, effects, size, color, angle,
-         NULL);
+    REND(painter->rend, text, painter, text, pos, align, effects, size,
+         painter->color, angle, NULL);
     return 0;
 }
 
@@ -907,7 +907,7 @@ bool painter_unproject(const painter_t *painter, int frame,
     p[0] = win_pos[0] / painter->proj->window_size[0] * 2 - 1;
     p[1] = 1 - win_pos[1] / painter->proj->window_size[1] * 2;
     // NDC to view.
-    ret = project(painter->proj, PROJ_BACKWARD, p, p);
+    ret = unproject(painter->proj, 0, p, p);
     convert_frame(painter->obs, FRAME_VIEW, frame, true, p, pos);
     return ret;
 }

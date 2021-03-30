@@ -72,6 +72,7 @@ struct tex_cache {
     bool        in_use;
     int         xoff;
     int         yoff;
+    double      color[3];
     texture_t   *tex;
 };
 
@@ -343,12 +344,20 @@ static item_t *get_item(renderer_gl_t *rend, int type,
 {
     item_t *item;
     item = rend->items ? rend->items->prev : NULL;
-    if (    item && item->type == type &&
+
+    while (item) {
+        if (item->type == type &&
             item->buf.capacity > item->buf.nb + buf_size &&
             (indices_size == 0 ||
                 item->indices.capacity > item->indices.nb + indices_size) &&
             item->tex == tex)
-        return item;
+        {
+            return item;
+        }
+        // Keep searching only if we allow reordering.
+        if (!(item->flags & PAINTER_ALLOW_REORDER)) break;
+        item = item->prev;
+    }
     return NULL;
 }
 
@@ -787,8 +796,45 @@ static void texture(renderer_t *rend_,
     texture2(rend, tex, uv, verts, color, 0, false);
 }
 
+static uint8_t img_get(const uint8_t *img, int w, int h, int x, int y)
+{
+    if (x < 0 || x >= w || y < 0 || y >= h) return 0;
+    return img[y * w + x];
+}
+
+static void text_shadow_effect(const uint8_t *src, uint8_t *dst,
+                               int w, int h, const double color[3])
+{
+    int i, j, di, dj;
+    double s;
+    double colsrc[4], frag[4];
+
+    for (i = 0; i < h; i++)
+    for (j = 0; j < w; j++) {
+        // Compute shadow blur.
+        // Note: could use some weigths.
+        s = 0;
+        for (di = -1; di <= 1; di++)
+        for (dj = -1; dj <= 1; dj++) {
+            s += img_get(src, w - 2, h - 2, j + dj - 1, i + di - 1) / 255.;
+        }
+        s /= 9;
+        vec4_set(frag, color[0] / 8, color[1] / 8, color[2] / 8, s);
+        // Blend real color on top of shadow.
+        vec4_set(colsrc, color[0], color[1], color[2],
+                 img_get(src, w - 2, h - 2, j - 1, i - 1) / 255.);
+        vec4_mix(frag, colsrc, colsrc[3], frag);
+
+        dst[(i * w + j) * 4 + 0] = frag[0] * 255;
+        dst[(i * w + j) * 4 + 1] = frag[1] * 255;
+        dst[(i * w + j) * 4 + 2] = frag[2] * 255;
+        dst[(i * w + j) * 4 + 3] = frag[3] * 255;
+    }
+}
+
 // Render text using a system bakend generated texture.
 static void text_using_texture(renderer_gl_t *rend,
+                               const painter_t *painter,
                                const char *text, const double pos[2],
                                int align, int effects, double size,
                                const double color[4], double angle,
@@ -797,27 +843,36 @@ static void text_using_texture(renderer_gl_t *rend,
     double uv[4][2], verts[4][2];
     double s[2], ofs[2] = {0, 0}, bounds[4];
     const double scale = rend->scale;
-    uint8_t *img;
-    int i, w, h, xoff, yoff;
+    uint8_t *img, *img_rgba;
+    int i, w, h, xoff, yoff, flags;
     tex_cache_t *ctex;
     texture_t *tex;
+    assert(color);
 
     DL_FOREACH(rend->tex_cache, ctex) {
         if (ctex->size == size && ctex->effects == effects &&
-                strcmp(ctex->text, text) == 0) break;
+                strcmp(ctex->text, text) == 0 &&
+                memcmp(ctex->color, color, sizeof(ctex->color)) == 0) break;
     }
 
     if (!ctex) {
         img = (void*)sys_render_text(text, size * scale, effects, &w, &h,
                                      &xoff, &yoff);
+        // Shadow effect, into a texture with one pixel extra border.
+        w += 2;
+        h += 2;
+        img_rgba = malloc(w * h * 4);
+        text_shadow_effect(img, img_rgba, w, h, color);
+        free(img);
         ctex = calloc(1, sizeof(*ctex));
         ctex->size = size;
         ctex->effects = effects;
         ctex->xoff = xoff;
         ctex->yoff = yoff;
         ctex->text = strdup(text);
-        ctex->tex = texture_from_data(img, w, h, 1, 0, 0, w, h, 0);
-        free(img);
+        ctex->tex = texture_from_data(img_rgba, w, h, 4, 0, 0, w, h, 0);
+        vec3_copy(color, ctex->color);
+        free(img_rgba);
         DL_APPEND(rend->tex_cache, ctex);
     }
 
@@ -867,13 +922,16 @@ static void text_using_texture(renderer_gl_t *rend,
         window_to_ndc(rend, verts[i], verts[i]);
     }
 
-    texture2(rend, tex, uv, verts, color,
-             (effects & TEXT_BLEND_ADD) ? PAINTER_ADD : 0,
+    flags = painter->flags;
+    if (effects & TEXT_BLEND_ADD) flags |= PAINTER_ADD;
+    texture2(rend, tex, uv, verts, VEC(1, 1, 1, color[3]), flags,
              rend->cull_flipped);
 }
 
 // Render text using nanovg.
-static void text_using_nanovg(renderer_gl_t *rend, const char *text,
+static void text_using_nanovg(renderer_gl_t *rend,
+                              const painter_t *painter,
+                              const char *text,
                               const double pos[2], int align, int effects,
                               double size, const double color[4], double angle,
                               double bounds[4])
@@ -890,6 +948,7 @@ static void text_using_nanovg(renderer_gl_t *rend, const char *text,
     if (!bounds) {
         item = calloc(1, sizeof(*item));
         item->type = ITEM_TEXT;
+        item->flags = painter->flags;
         vec4_to_float(color, item->color);
         item->color[0] = clamp(item->color[0], 0.0, 1.0);
         item->color[1] = clamp(item->color[1], 0.0, 1.0);
@@ -922,7 +981,8 @@ static void text_using_nanovg(renderer_gl_t *rend, const char *text,
     }
 }
 
-static void text(renderer_t *rend_, const char *text, const double pos[2],
+static void text(renderer_t *rend_, const painter_t *painter,
+                 const char *text, const double pos[2],
                  int align, int effects, double size, const double color[4],
                  double angle, double bounds[4])
 {
@@ -942,11 +1002,11 @@ static void text(renderer_t *rend_, const char *text, const double pos[2],
     }
 
     if (sys_callbacks.render_text) {
-        text_using_texture(rend, text, pos, align, effects, size, color, angle,
-                           bounds);
+        text_using_texture(rend, painter, text, pos, align, effects, size,
+                           color, angle, bounds);
     } else {
-        text_using_nanovg(rend, text, pos, align, effects, size, color, angle,
-                          bounds);
+        text_using_nanovg(rend, painter, text, pos, align, effects, size,
+                          color, angle, bounds);
     }
 
 }
@@ -1525,7 +1585,7 @@ static void line_glow(renderer_t           *rend_,
     vec4_to_float(painter->color, color);
     mesh = line_to_mesh(line, size, 10);
 
-    if (mesh->indices_count >= 1024) {
+    if (mesh->indices_count >= 1024 || mesh->verts_count >= 1024) {
         LOG_W("Too many points in lines! (size: %d)", size);
         goto end;
     }
@@ -1667,8 +1727,8 @@ static void mesh(renderer_t          *rend_,
 
     // Special cas for Mollweide projection when the frame convertion can
     // be expressed as a single matrix rotation.
-    if ((painter->proj->type == PROJ_MOLLWEIDE ||
-         painter->proj->type == PROJ_MOLLWEIDE_ADAPTIVE) &&
+    if ((painter->proj->klass->id == PROJ_MOLLWEIDE ||
+         painter->proj->klass->id == PROJ_MOLLWEIDE_ADAPTIVE) &&
             frame_get_rotation(painter->obs, frame, FRAME_VIEW, rot)) {
         item->mesh.proj = PROJ_MOLLWEIDE;
         vec2_to_float(painter->proj->scaling, item->mesh.proj_scaling);

@@ -269,6 +269,13 @@ static int line_update(obj_t *obj, double dt)
     return changed ? 1 : 0;
 }
 
+static void win_to_ndc(const projection_t *proj, const double win[2],
+                       double ndc[2])
+{
+    ndc[0] = win[0] / proj->window_size[0] * 2 - 1;
+    ndc[1] = 1 - win[1] / proj->window_size[1] * 2;
+}
+
 static void ndc_to_win(const projection_t *proj, const double ndc[2],
                        double win[2])
 {
@@ -356,9 +363,11 @@ static bool check_borders(const double a[3], const double b[3],
     bool visible[2];
     int border;
     const double VS[4][2] = {{+1, 0}, {-1, 0}, {0, -1}, {0, +1}};
-    visible[0] = project(proj, PROJ_TO_NDC_SPACE, a, pos[0]);
-    visible[1] = project(proj, PROJ_TO_NDC_SPACE, b, pos[1]);
+    visible[0] = project(proj, PROJ_TO_WINDOW_SPACE, a, pos[0]);
+    visible[1] = project(proj, PROJ_TO_WINDOW_SPACE, b, pos[1]);
     if (visible[0] != visible[1]) {
+        win_to_ndc(proj, pos[0], pos[0]);
+        win_to_ndc(proj, pos[1], pos[1]);
         q = segment_viewport_intersection(pos[0], pos[1], &border);
         if (q == DBL_MAX) return false;
         vec2_mix(pos[0], pos[1], q, p);
@@ -398,21 +407,26 @@ static void spherical_project(
 static void render_label(const double p[2], const double u[2],
                          const double v[2], const double uv[2],
                          int dir, line_t *line, int step,
-                         const painter_t *painter)
+                         const painter_t *painter_)
 {
     char buf[32];
     double pos[2];
-    double a, color[4], label_angle;
+    double a, label_angle;
     char s;
     int h[4];
     double n[2];
     double bounds[4], size[2];
     const double text_size = 12;
+    painter_t painter = *painter_;
 
+    painter.color[3] = 1;
     vec2_normalize(u, n);
 
     // Give up if angle with screen is too acute.
     if (fabs(vec2_dot(n, v)) < 0.25) return;
+    // Hints the renderer that we can move the labels after the lines to
+    // optimize batching.
+    painter.flags |= PAINTER_ALLOW_REORDER;
 
     if (vec2_dot(n, v) < 0) {
         vec2_mul(-1, u, u);
@@ -460,7 +474,7 @@ static void render_label(const double p[2], const double u[2],
         assert(false);
     }
 
-    paint_text_bounds(painter, buf, p, ALIGN_CENTER | ALIGN_MIDDLE, 0,
+    paint_text_bounds(&painter, buf, p, ALIGN_CENTER | ALIGN_MIDDLE, 0,
                       text_size, bounds);
     size[0] = bounds[2] - bounds[0];
     size[1] = bounds[3] - bounds[1];
@@ -479,11 +493,8 @@ static void render_label(const double p[2], const double u[2],
     pos[0] += n3[0] * size[1] / 2;
     pos[1] += n3[1] * size[1] / 2;
 
-    vec4_copy(painter->color, color);
-
-    color[3] = 1.0;
-    paint_text(painter, buf, pos, ALIGN_CENTER | ALIGN_MIDDLE, 0,
-               text_size, color, label_angle);
+    paint_text(&painter, buf, pos, ALIGN_CENTER | ALIGN_MIDDLE, 0,
+               text_size, label_angle);
 }
 
 /*
@@ -616,14 +627,14 @@ static void get_azalt_fov(const painter_t *painter, int frame,
      * into the frame and testing the maximum and minimum distance to the
      * central point for each of them.
      */
-    project(painter->proj, PROJ_BACKWARD, p, p);
+    unproject(painter->proj, 0, p, p);
     convert_frame(painter->obs, FRAME_VIEW, frame, true, p, p);
     eraC2s(p, &theta0, &phi0);
 
     for (i = 0; i < N * N; i++) {
         p[0] = 2 * ((i % N) / (double)(N - 1) - 0.5);
         p[1] = 2 * ((i / N) / (double)(N - 1) - 0.5);
-        project(painter->proj, PROJ_BACKWARD, p, p);
+        unproject(painter->proj, 0, p, p);
         convert_frame(painter->obs, FRAME_VIEW, frame, true, p, p);
         eraC2s(p, &theta, &phi);
 

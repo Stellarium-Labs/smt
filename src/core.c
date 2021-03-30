@@ -20,7 +20,7 @@ static void core_on_fov_changed(obj_t *obj, const attribute_t *attr)
     // For the moment there is not point going further than 0.5°.
     projection_t proj;
     core_get_proj(&proj);
-    core->fov = clamp(core->fov, CORE_MIN_FOV, proj.max_fov);
+    core->fov = clamp(core->fov, CORE_MIN_FOV, proj.klass->max_fov);
 }
 
 static void add_progressbar(void *user, const char *id, const char *label,
@@ -494,7 +494,7 @@ static void win_to_observed(double x, double y, double p[3])
     // Convert to NDC coordinates.
     pos[0] = pos[0] / core->win_size[0] * 2 - 1;
     pos[1] = -1 * (pos[1] / core->win_size[1] * 2 - 1);
-    project(&proj, PROJ_BACKWARD, pos, pos);
+    unproject(&proj, 0, pos, pos);
     convert_frame(core->observer, FRAME_VIEW, FRAME_OBSERVED, true, pos, p);
 }
 
@@ -517,8 +517,7 @@ static void render_proj_markers(const painter_t *painter_)
         project(painter.proj, PROJ_TO_WINDOW_SPACE, p, p_win);
         paint_2d_ellipse(&painter, NULL, 0, p_win, VEC(2, 2), NULL);
 
-        project(painter.proj, PROJ_BACKWARD | PROJ_FROM_WINDOW_SPACE,
-                p_win, p);
+        unproject(painter.proj, PROJ_FROM_WINDOW_SPACE, p_win, p);
         project(painter.proj, PROJ_TO_WINDOW_SPACE, p, p_win);
         paint_2d_ellipse(&painter, NULL, 0, p_win, VEC(4, 4), NULL);
     }
@@ -699,7 +698,7 @@ void core_on_zoom(double k, double x, double y)
     win_to_observed(x, y, pos_start);
     obj_get_attr(&core->obj, "fov", &fov);
     fov /= k;
-    fov = clamp(fov, CORE_MIN_FOV, proj.max_ui_fov);
+    fov = clamp(fov, CORE_MIN_FOV, proj.klass->max_ui_fov);
     obj_set_attr(&core->obj, "fov", fov);
     win_to_observed(x, y, pos_end);
 
@@ -924,8 +923,8 @@ void core_zoomto(double fov, double duration)
 
     now = sys_get_unix_time();
     core_get_proj(&proj);
-    if (fov > proj.max_ui_fov)
-        fov = proj.max_ui_fov;
+    if (fov > proj.klass->max_ui_fov)
+        fov = proj.klass->max_ui_fov;
 
     // Direct lookat.
     if (duration == 0.0) {
