@@ -16,7 +16,7 @@
   <v-spacer></v-spacer>
   <v-dialog v-model="dialog" max-width="600">
     <v-card>
-      <v-card-title class="headline">SMT Server Info</v-card-title>
+      <v-card-title class="text-h5">SMT Server Info</v-card-title>
       <v-card-text>
         SMT Server version: <b>{{ $store.state.SMT.smtServerInfo.version }}</b><br>
         Displaying data coming from server: <b>{{ $store.state.SMT.smtServerInfo.dataGitServer }}</b><br>

@@ -62,7 +62,7 @@
         <div v-if="constraintsToDisplay.length" class="mt-2 line_right_left" style="text-align: center;">Constraints</div>
         <v-row no-gutters>
           <div v-for="(constraint, i) in constraintsToDisplay" :key="i" style="text-align: center;" class="pa-1">
-            <div class="caption white--text">{{ constraint.field.name }}</div>
+            <div class="text-caption white--text">{{ constraint.field.name }}</div>
             <v-chip small class="white--text" :close="constraint.closable" :disabled="!constraint.closable" :color="constraint.color ? constraint.color : 'primary'" @click="constraintClicked(i)" @click:close="constraintClosed(i)">
             <div :style="{ minWidth: constraint.closable ? 60 : 82 + 'px' }"><span v-if="printConstraint(constraint) === '__undefined'"><i>Undefined</i></span><span v-else>{{ printConstraint(constraint) }}</span></div>
             </v-chip>
