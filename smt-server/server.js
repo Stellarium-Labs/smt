@@ -19,10 +19,14 @@ import bodyParser from 'body-parser'
 import NodeGit from 'nodegit'
 import hash_sum from 'hash-sum'
 
+const SMT_VERSION = process.env.npm_package_version || 'dev'
+const DATA_GIT_SERVER = 'git@github.com:Stellarium-Labs/smt-data.git'
+const DATA_GIT_BRANCH = process.env.SMT_DATA_BRANCH || 'master'
+
 const SMT_SERVER_INFO = {
-  version: process.env.npm_package_version || 'dev',
-  dataGitServer: 'git@github.com:Stellarium-Labs/smt-data.git',
-  dataGitBranch: process.env.SMT_DATA_BRANCH || 'master',
+  version: SMT_VERSION,
+  dataGitServer: DATA_GIT_SERVER,
+  dataGitBranch: DATA_GIT_BRANCH,
   dataGitSha1: '',
   dataLocalModifications: undefined,
   baseHashKey: ''
@@ -30,7 +34,7 @@ const SMT_SERVER_INFO = {
 
 let status = 'starting'
 
-console.log('Starting SMT Server ' + SMT_SERVER_INFO.version + ' on data branch ' + SMT_SERVER_INFO.dataGitBranch)
+console.log('Starting SMT Server ' + SMT_VERSION + ' on data branch ' + DATA_GIT_BRANCH)
 
 const app = express()
 app.use(cors())
@@ -45,14 +49,34 @@ process.on('SIGINT', () => {
 const port = process.env.PORT || 8100
 const __dirname = process.cwd()
 
-// Start listening to connection even during startup
-app.listen(port, () => {
-  console.log(`SMT Server listening at http://localhost:${port}`)
-})
-
-app.get('/api/v1/status', (req, res) => {
-  res.send({status: status})
-})
+const getSmtServerSourceCodeHash = async function () {
+  let extraVersionHash = ''
+  try {
+    extraVersionHash = await fsp.readFile(__dirname + '/extraVersionHash.txt', 'utf-8')
+    extraVersionHash = extraVersionHash.trim()
+  } catch (err) {
+    console.log('No extraVersionHash.txt file found, try to generate one from git status')
+    // Check if this server is in a git and if it has modifications, generate
+    // an extraVersionHash on the fly
+    try {
+      const repo = await NodeGit.Repository.open(__dirname + '/..')
+      const commit = await repo.getHeadCommit()
+      const statuses = await repo.getStatus()
+      const serverCodeGitSha1 = await commit.sha()
+      let modified = false
+      statuses.forEach(s => { if (s.isModified()) modified = true })
+      extraVersionHash = serverCodeGitSha1
+      if (modified) {
+        console.log('Server code has local modifications')
+        extraVersionHash += '_' + Date.now()
+      }
+    } catch (err) {
+      // This server is not in a git, just give up and return empty string
+    }
+  }
+  return extraVersionHash
+}
+const smtServerSourceCodeHash = await getSmtServerSourceCodeHash()
 
 const syncGitData = async function (gitServer, gitBranch) {
   const localPath = __dirname + '/data'
@@ -87,82 +111,96 @@ const syncGitData = async function (gitServer, gitBranch) {
   const statuses = await repo.getStatus()
   const ret = {}
   ret.dataGitSha1 = await commit.sha()
-  ret.modified = false
-  statuses.forEach(s => { if (s.isModified()) ret.modified = true })
-  if (ret.modified) console.log('Data has local modifications')
+  ret.dataLocalModifications = false
+  statuses.forEach(s => { if (s.isModified()) ret.dataLocalModifications = true })
+
+  // Compute the base hash key which is unique for a given version of the server
+  // code and data. It will be used to generate cache-friendly URLs.
+  let baseHashKey = ret.dataGitSha1 + smtServerSourceCodeHash
+
+  if (ret.dataLocalModifications) {
+    console.log('Data has local modifications')
+    baseHashKey += '_' + Date.now()
+  }
+  ret.baseHashKey = hash_sum(baseHashKey)
   return ret
 }
 
-const getSmtServerSourceCodeHash = async function () {
-  let extraVersionHash = ''
-  try {
-    extraVersionHash = await fsp.readFile(__dirname + '/extraVersionHash.txt', 'utf-8')
-    extraVersionHash = extraVersionHash.trim()
-  } catch (err) {
-    console.log('No extraVersionHash.txt file found, try to generate one from git status')
-    // Check if this server is in a git and if it has modifications, generate
-    // an extraVersionHash on the fly
-    try {
-      const repo = await NodeGit.Repository.open(__dirname + '/..')
-      const commit = await repo.getHeadCommit()
-      const statuses = await repo.getStatus()
-      const serverCodeGitSha1 = await commit.sha()
-      let modified = false
-      statuses.forEach(s => { if (s.isModified()) modified = true })
-      extraVersionHash = serverCodeGitSha1
-      if (modified) {
-        console.log('Server code has local modifications')
-        extraVersionHash += '_' + Date.now()
-      }
-    } catch (err) {
-      // This server is not in a git, just give up and return empty string
-    }
-  }
-  return extraVersionHash
-}
+// Start listening to connection even during startup
+app.listen(port, () => {
+  console.log(`SMT Server listening at http://localhost:${port}`)
+})
 
-const smtServerSourceCodeHash = await getSmtServerSourceCodeHash()
+app.get('/api/v1/status', (req, res) => {
+  res.send({status: status})
+})
 
-status = 'syncing data'
-const ret = await syncGitData(SMT_SERVER_INFO.dataGitServer, SMT_SERVER_INFO.dataGitBranch)
-SMT_SERVER_INFO.dataGitSha1 = ret.dataGitSha1
-SMT_SERVER_INFO.dataLocalModifications = ret.modified
-
-// Compute the base hash key which is unique for a given version of the server
-// code and data. It will be used to generate cache-friendly URLs.
-let baseHashKey = SMT_SERVER_INFO.dataGitSha1 + smtServerSourceCodeHash
-if (SMT_SERVER_INFO.dataLocalModifications)
-  baseHashKey += '_' + Date.now()
-SMT_SERVER_INFO.baseHashKey = hash_sum(baseHashKey)
-console.log('Server base hash key: ' + SMT_SERVER_INFO.baseHashKey)
-
-status = 'loading data'
 const dbFileName = __dirname + '/qe.db'
-// Check if we can preserve the previous DB to avoid re-loading the whole DB
-let reloadGeojson = true
-if (fs.existsSync(dbFileName) && !fs.existsSync('dontReloadGeojson')) {
+var qe
+// Global storage of hash -> query for later lookup
+var hashToQuery = {}
+
+const reSyncData = async function () {
+  status = 'syncing data'
+  const newServerInfo = await syncGitData(DATA_GIT_SERVER, DATA_GIT_BRANCH)
+
+  // Check if we can preserve the previous DB to avoid re-loading the whole DB
+  let reloadGeojson = true
   try {
     const dbServerInfo = QueryEngine.getDbExtraInfo(dbFileName)
-    if (dbServerInfo.baseHashKey === SMT_SERVER_INFO.baseHashKey) {
+    if (dbServerInfo && fs.existsSync('dontReloadGeojson')) {
+      reloadGeojson = false
+    }
+    if (dbServerInfo && dbServerInfo.baseHashKey === newServerInfo.baseHashKey) {
       reloadGeojson = false
     }
   } catch (err) {}
-}
 
-if (reloadGeojson) {
+  if (!reloadGeojson) {
+    console.log('Data was not changed, no need to reload DB')
+    if (!qe) qe = new QueryEngine(dbFileName)
+    status = 'ready'
+    return
+  }
+
   console.log('Data or code has changed since last start: reload geojson')
-  await QueryEngine.generateDb(__dirname + '/data/', dbFileName, SMT_SERVER_INFO)
+  status = 'loading data'
+  await QueryEngine.generateDb(__dirname + '/data/', dbFileName + '-tmp', newServerInfo)
   console.log('*** DB Loading finished ***')
-} else {
-  console.log('No data/code change since last start: reload previous DB')
+
+  // Replace production DB
+  // Stop running queries if any
+  if (qe) await QueryEngine.deinit()
+  // Clear query hash list
+  hashToQuery = {}
+  // Reset server info
+  SMT_SERVER_INFO.dataGitSha1 = newServerInfo.dataGitSha1
+  SMT_SERVER_INFO.dataLocalModifications = newServerInfo.dataLocalModifications
+  SMT_SERVER_INFO.baseHashKey = newServerInfo.baseHashKey
+
+  const dbAlreadyExists = fs.existsSync(dbFileName)
+  if (dbAlreadyExists) {
+    // supress previous DB
+    fs.unlinkSync(dbFileName)
+  }
+  fs.renameSync(dbFileName + '-tmp', dbFileName)
+
+  // Initialize the read-only engine
+  qe = new QueryEngine(dbFileName)
+  status = 'ready'
+  console.log('Server base hash key: ' + SMT_SERVER_INFO.baseHashKey)
 }
 
-// Initialize the read-only engine
-const qe = new QueryEngine(dbFileName)
-status = 'ready'
+await reSyncData()
 
-// Global storage of hash -> query for later lookup
-const hashToQuery = {}
+function reSyncPeriodic () {
+  if (status !== 'ready') return
+  console.log('\n-- Periodic data check --')
+  reSyncData()
+}
+
+// Poll git server every 60 minutes to check if data was modified
+setInterval(reSyncPeriodic, 3600 * 1000);
 
 // Insert this query in the global list of hash -> query for later lookup
 // Returns a unique hash key referencing this query

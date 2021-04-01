@@ -43,4 +43,4 @@ for (let i in queries) {
   }
   console.log('query %d: %d ms', i, new Date() - start)
 }
-QueryEngine.deinit()
+await QueryEngine.deinit()

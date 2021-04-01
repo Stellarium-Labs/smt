@@ -701,7 +701,7 @@ export default class QueryEngine {
   }
 
   static getDbExtraInfo (dbFileName) {
-    console.assert(fs.existsSync(dbFileName))
+    if (!fs.existsSync(dbFileName)) return undefined
     const db = new Database(dbFileName, { readonly: true });
     return JSON.parse(db.prepare('SELECT extra_info from smt_meta_data').get().extra_info)
   }
@@ -865,7 +865,7 @@ export default class QueryEngine {
   }
 
   static deinit () {
-    if (QueryEngine.pool) QueryEngine.pool.terminate(false, 10000)
+    if (QueryEngine.pool) return QueryEngine.pool.terminate(false, 10000)
   }
 }
 
