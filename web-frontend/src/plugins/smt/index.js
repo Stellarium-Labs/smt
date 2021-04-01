@@ -47,6 +47,7 @@ export default {
     app.$stel.core.comets.visible = false
     app.$stel.core.satellites.visible = false
     app.$stel.core.minor_planets.visible = false
+    app.$stel.core.stars.hints_mag_offset = -2
     app.$stel.core.mount_frame = app.$stel.FRAME_ICRF
     app.$stel.core.projection = 5 // PROJ_MOLLWEIDE
     app.$stel.core.observer.refraction = false
@@ -73,6 +74,7 @@ export default {
     core.stars.addDataSource({ url: doUrl + 'swe-data-packs/base/2020-03-11/base_2020-03-11_5fb747de/stars', key: 'base' })
     core.stars.addDataSource({ url: doUrl + 'swe-data-packs/extended/2020-03-11/extended_2020-03-11_26aa5ab8/stars', key: 'extended' })
     core.stars.addDataSource({ url: doUrl + 'surveys/gaia/v1', key: 'gaia' })
+    core.skycultures.addDataSource({ url: doUrl + 'skycultures/v3/western', key: 'western' })
     core.milkyway.addDataSource({ url: doUrl + 'surveys/milkyway/v1' })
     core.dss.addDataSource({ url: doUrl + 'surveys/dss/v1' })
     core.dsos.addDataSource({ url: doUrl + 'swe-data-packs/base/2020-03-11/base_2020-03-11_5fb747de/dso' })
