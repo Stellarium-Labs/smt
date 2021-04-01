@@ -89,7 +89,6 @@ enum {
     ITEM_VG_LINE,
     ITEM_TEXT,
     ITEM_QUAD_WIREFRAME,
-    ITEM_LINES_GLOW,
     ITEM_GLTF,
 };
 
@@ -194,15 +193,6 @@ static const gl_buf_info_t MESH_BUF = {
 };
 
 static const gl_buf_info_t LINES_BUF = {
-    .size = 28,
-    .attrs = {
-        [ATTR_POS]      = {GL_FLOAT, 4, false, 0},
-        [ATTR_TEX_POS]  = {GL_FLOAT, 2, false, 16},
-        [ATTR_COLOR]    = {GL_UNSIGNED_BYTE, 4, true, 24},
-    },
-};
-
-static const gl_buf_info_t LINES_GLOW_BUF = {
     .size = 20,
     .attrs = {
         [ATTR_POS]      = {GL_FLOAT, 3, false, 0},
@@ -802,12 +792,29 @@ static uint8_t img_get(const uint8_t *img, int w, int h, int x, int y)
     return img[y * w + x];
 }
 
+static void blend_color(double dst[4], const double src[4])
+{
+    double a;
+    a = (1 - src[3]) * dst[3] + src[3];
+    if (a == 0) {
+        dst[0] = src[0];
+        dst[1] = src[1];
+        dst[2] = src[2];
+        dst[3] = 0;
+        return;
+    }
+    dst[0] = ((1 - src[3]) * dst[3] * dst[0] + src[3] * src[0]) / a;
+    dst[1] = ((1 - src[3]) * dst[3] * dst[1] + src[3] * src[1]) / a;
+    dst[2] = ((1 - src[3]) * dst[3] * dst[2] + src[3] * src[2]) / a;
+    dst[3] = a;
+}
+
 static void text_shadow_effect(const uint8_t *src, uint8_t *dst,
                                int w, int h, const double color[3])
 {
     int i, j, di, dj;
     double s;
-    double colsrc[4], frag[4];
+    double text_col[4], frag[4];
 
     for (i = 0; i < h; i++)
     for (j = 0; j < w; j++) {
@@ -821,9 +828,9 @@ static void text_shadow_effect(const uint8_t *src, uint8_t *dst,
         s /= 9;
         vec4_set(frag, color[0] / 8, color[1] / 8, color[2] / 8, s);
         // Blend real color on top of shadow.
-        vec4_set(colsrc, color[0], color[1], color[2],
+        vec4_set(text_col, color[0], color[1], color[2],
                  img_get(src, w - 2, h - 2, j - 1, i - 1) / 255.);
-        vec4_mix(frag, colsrc, colsrc[3], frag);
+        blend_color(frag, text_col);
 
         dst[(i * w + j) * 4 + 0] = frag[0] * 255;
         dst[(i * w + j) * 4 + 1] = frag[1] * 255;
@@ -1070,25 +1077,6 @@ static void draw_buffer(const gl_buf_t *buf, const gl_buf_t *indices,
     GL(glDeleteBuffers(1, &index_buffer));
 }
 
-static void item_lines_render(renderer_gl_t *rend, const item_t *item)
-{
-    gl_shader_t *shader;
-    shader = shader_get("blit", NULL, ATTR_NAMES, init_shader);
-    GL(glUseProgram(shader->prog));
-
-    GL(glLineWidth(item->lines.width * rend->scale));
-
-    GL(glActiveTexture(GL_TEXTURE0));
-    GL(glBindTexture(GL_TEXTURE_2D, rend->white_tex->id));
-
-    GL(glEnable(GL_BLEND));
-    GL(glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                           GL_ZERO, GL_ONE));
-    GL(glDisable(GL_DEPTH_TEST));
-
-    draw_buffer(&item->buf, &item->indices, GL_LINES);
-}
-
 static void item_mesh_render(renderer_gl_t *rend, const item_t *item)
 {
     // XXX: almost the same as item_lines_render.
@@ -1140,7 +1128,7 @@ static void item_mesh_render(renderer_gl_t *rend, const item_t *item)
 }
 
 // XXX: almost the same as item_mesh_render!
-static void item_lines_glow_render(renderer_gl_t *rend, const item_t *item)
+static void item_lines_render(renderer_gl_t *rend, const item_t *item)
 {
     gl_shader_t *shader;
     float win_size[2] = {rend->fb_size[0] / rend->scale,
@@ -1222,6 +1210,9 @@ static void item_vg_render(renderer_gl_t *rend, const item_t *item)
     nvgStroke(rend->vg);
     nvgRestore(rend->vg);
     nvgEndFrame(rend->vg);
+
+    // Reset colormask to its original value.
+    GL(glColorMask(true, true, true, false));
 }
 
 static void item_text_render(renderer_gl_t *rend, const item_t *item)
@@ -1495,11 +1486,19 @@ static void rend_flush(renderer_gl_t *rend)
     }
 
     // Set default OpenGL state.
+    // Make sure we clear everything.
     GL(glClearColor(0.0, 0.0, 0.0, 1.0));
-    GL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+    GL(glColorMask(true, true, true, true));
+    GL(glDepthMask(true));
+    GL(glStencilMask(0xff));
+    GL(glClear(GL_COLOR_BUFFER_BIT |
+               GL_DEPTH_BUFFER_BIT |
+               GL_STENCIL_BUFFER_BIT));
+
     GL(glViewport(0, 0, rend->fb_size[0], rend->fb_size[1]));
     GL(glDepthMask(GL_FALSE));
     GL(glDisable(GL_DEPTH_TEST));
+    GL(glColorMask(true, true, true, false)); // Do not change the alpha.
 
     // On OpenGL Desktop, we have to enable point sprite support.
 #ifndef GLES2
@@ -1511,9 +1510,6 @@ static void rend_flush(renderer_gl_t *rend)
         switch (item->type) {
         case ITEM_LINES:
             item_lines_render(rend, item);
-            break;
-        case ITEM_LINES_GLOW:
-            item_lines_glow_render(rend, item);
             break;
         case ITEM_MESH:
             item_mesh_render(rend, item);
@@ -1563,6 +1559,7 @@ static void rend_flush(renderer_gl_t *rend)
     }
     // Reset to default OpenGL settings.
     GL(glDepthMask(GL_TRUE));
+    GL(glColorMask(true, true, true, true));
 }
 
 static void finish(renderer_t *rend_)
@@ -1571,10 +1568,10 @@ static void finish(renderer_t *rend_)
     rend_flush(rend);
 }
 
-static void line_glow(renderer_t           *rend_,
-                      const painter_t      *painter,
-                      const double         (*line)[3],
-                      int                  size)
+static void line(renderer_t           *rend_,
+                 const painter_t      *painter,
+                 const double         (*line)[3],
+                 int                  size)
 {
     renderer_gl_t *rend = (void*)rend_;
     line_mesh_t *mesh;
@@ -1582,6 +1579,7 @@ static void line_glow(renderer_t           *rend_,
     float color[4];
     item_t *item;
 
+    assert(painter->lines.glow); // Only glowing lines supported for now.
     vec4_to_float(painter->color, color);
     mesh = line_to_mesh(line, size, 10);
 
@@ -1591,7 +1589,7 @@ static void line_glow(renderer_t           *rend_,
     }
 
     // Get the item.
-    item = get_item(rend, ITEM_LINES_GLOW, mesh->verts_count,
+    item = get_item(rend, ITEM_LINES, mesh->verts_count,
                     mesh->indices_count, NULL);
     if (item && memcmp(item->color, color, sizeof(color))) item = NULL;
     if (item && item->lines.dash_length != painter->lines.dash_length)
@@ -1604,8 +1602,8 @@ static void line_glow(renderer_t           *rend_,
 
     if (!item) {
         item = calloc(1, sizeof(*item));
-        item->type = ITEM_LINES_GLOW;
-        gl_buf_alloc(&item->buf, &LINES_GLOW_BUF, 1024);
+        item->type = ITEM_LINES;
+        gl_buf_alloc(&item->buf, &LINES_BUF, 1024);
         gl_buf_alloc(&item->indices, &INDICES_BUF, 1024);
         item->lines.width = painter->lines.width;
         item->lines.glow = painter->lines.glow;
@@ -1633,54 +1631,6 @@ static void line_glow(renderer_t           *rend_,
 
 end:
     line_mesh_delete(mesh);
-}
-
-static void line(renderer_t           *rend_,
-                 const painter_t      *painter,
-                 const double         (*line)[3],
-                 int                  size)
-{
-    int i, ofs;
-    renderer_gl_t *rend = (void*)rend_;
-    item_t *item;
-    float color[4];
-    double pos[2];
-
-    if (painter->lines.glow) {
-        line_glow(rend_, painter, line, size);
-        return;
-    }
-
-    vec4_to_float(painter->color, color);
-    item = get_item(rend, ITEM_LINES, size, size * 2, NULL);
-    if (item && memcmp(item->color, color, sizeof(color))) item = NULL;
-    if (item && item->lines.width != painter->lines.width) item = NULL;
-
-    if (!item) {
-        item = calloc(1, sizeof(*item));
-        item->type = ITEM_LINES;
-        gl_buf_alloc(&item->buf, &LINES_BUF, 1024);
-        gl_buf_alloc(&item->indices, &INDICES_BUF, 1024);
-        item->lines.width = painter->lines.width;
-        memcpy(item->color, color, sizeof(color));
-        DL_APPEND(rend->items, item);
-    }
-
-    ofs = item->buf.nb;
-
-    for (i = 0; i < size; i++) {
-        window_to_ndc(rend, line[i], pos);
-        gl_buf_2f(&item->buf, -1, ATTR_TEX_POS, (double)i / (size - 1), 0);
-        gl_buf_4f(&item->buf, -1, ATTR_POS, VEC2_SPLIT(pos), 0.0, 1.0);
-        gl_buf_4i(&item->buf, -1, ATTR_COLOR, 255, 255, 255, 255);
-        gl_buf_next(&item->buf);
-        if (i < size - 1) {
-            gl_buf_1i(&item->indices, -1, 0, ofs + i);
-            gl_buf_next(&item->indices);
-            gl_buf_1i(&item->indices, -1, 0, ofs + i + 1);
-            gl_buf_next(&item->indices);
-        }
-    }
 }
 
 static void mesh(renderer_t          *rend_,
