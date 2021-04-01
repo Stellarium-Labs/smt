@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] - 2021-04-01
+- Large server code refactoring
+- Use master data branch instead of datav01
+- Properly display and track server status on client side
+- Allow to load data while serving requests using a DB swap
+- Poll the git server every hours and reload data if necessary
+- Performance optimizations on core rendering
+- Fix missing stars/DSO labels
+
 ## [0.3.5] - 2021-03-21
 - Fix display issues in analyze panel
 - Avoid cache misses when only the order of query constraints was changed
