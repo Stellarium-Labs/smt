@@ -460,16 +460,21 @@ export default {
         }
       }
     },
-    addConstraint: function (c) {
+    addConstraint: function (cc) {
       const that = this
-      const newConstraints = this.constraints.filter(cons => {
-        const consField = that.$smt.fields.find(f => f.id === cons.fieldId)
-        if (consField.widget === 'date_range' && cons.fieldId === c.fieldId) return false
-        if (consField.widget === 'number_range' && cons.fieldId === c.fieldId) return false
-        return true
-      })
-      newConstraints.push(c)
-      this.editedConstraint = c
+      if (!Array.isArray(cc)) cc = [cc]
+      let newConstraints = this.constraints
+      for (const i in cc) {
+        const c = cc[i]
+        newConstraints = newConstraints.filter(cons => {
+          const consField = that.$smt.fields.find(f => f.id === cons.fieldId)
+          if (consField.widget === 'date_range' && cons.fieldId === c.fieldId) return false
+          if (consField.widget === 'number_range' && cons.fieldId === c.fieldId) return false
+          return true
+        })
+      }
+      newConstraints = newConstraints.concat(cc)
+      this.editedConstraint = cc[0]
       this.$emit('update:constraints', newConstraints)
     },
     removeConstraint: function (c) {

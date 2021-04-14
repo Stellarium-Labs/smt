@@ -40,12 +40,15 @@ export default {
     },
     freeTextChanged: function (clist) {
       const that = this
-      const addConstraint = function (v) {
-        const constraint = { fieldId: that.fieldResults.field.id, operation: (name === '__undefined' ? 'IS_UNDEFINED' : 'STRING_EQUAL'), expression: v, negate: false }
-        that.$emit('add-constraint', constraint)
+      const makeConstraint = function (v) {
+        return { fieldId: that.fieldResults.field.id, operation: (name === '__undefined' ? 'IS_UNDEFINED' : 'STRING_EQUAL'), expression: v, negate: false }
       }
+      let constraints = []
       if (clist) {
-        clist.split(',').map(c => c.trim()).forEach(c => addConstraint(c))
+        constraints = clist.split(',').map(c => c.trim()).map(c => makeConstraint(c))
+      }
+      if (constraints.length > 0) {
+        that.$emit('add-constraint', constraints)
       }
     }
   },
