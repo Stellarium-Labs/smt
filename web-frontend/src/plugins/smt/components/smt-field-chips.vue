@@ -63,7 +63,9 @@ export default {
       return this.fieldResults && this.fieldResults.data.find(tag => tag.name === '__overflow') !== undefined
     },
     freeTextSearchPlaceHolder: function () {
-      return this.fieldResults.data.length > 0 ? 'e.g. ' + this.fieldResults.data[0].name + ', ..' : 'search...'
+      if (this.fieldResults.data.length === 1) return 'e.g. ' + this.fieldResults.data[0].name + ', ..'
+      if (this.fieldResults.data.length > 1) return 'e.g. ' + this.fieldResults.data[0].name + ', ' + this.fieldResults.data[1].name + ', ..'
+      return 'search...'
     }
   }
 }
