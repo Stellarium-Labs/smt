@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.1] - 2021-04-14
+- Fix bug when adding comma-separated constraints
+- Fix missing server info after data update
+- Core performance optimiozations
+
 ## [0.4.0] - 2021-04-01
 - Large server code refactoring
 - Use master data branch instead of datav01
