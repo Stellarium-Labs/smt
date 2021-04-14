@@ -23,14 +23,7 @@ const SMT_VERSION = process.env.npm_package_version || 'dev'
 const DATA_GIT_SERVER = 'git@github.com:Stellarium-Labs/smt-data.git'
 const DATA_GIT_BRANCH = process.env.SMT_DATA_BRANCH || 'master'
 
-const SMT_SERVER_INFO = {
-  version: SMT_VERSION,
-  dataGitServer: DATA_GIT_SERVER,
-  dataGitBranch: DATA_GIT_BRANCH,
-  dataGitSha1: '',
-  dataLocalModifications: undefined,
-  baseHashKey: ''
-}
+var BASE_HASH_KEY = ''
 
 let status = 'starting'
 
@@ -123,6 +116,10 @@ const syncGitData = async function (gitServer, gitBranch) {
     baseHashKey += '_' + Date.now()
   }
   ret.baseHashKey = hash_sum(baseHashKey)
+
+  ret.version = SMT_VERSION
+  ret.dataGitServer = gitServer
+  ret.dataGitBranch = gitBranch
   return ret
 }
 
@@ -173,10 +170,8 @@ const reSyncData = async function () {
   if (qe) await QueryEngine.deinit()
   // Clear query hash list
   hashToQuery = {}
-  // Reset server info
-  SMT_SERVER_INFO.dataGitSha1 = newServerInfo.dataGitSha1
-  SMT_SERVER_INFO.dataLocalModifications = newServerInfo.dataLocalModifications
-  SMT_SERVER_INFO.baseHashKey = newServerInfo.baseHashKey
+  // Reset server base hash key
+  BASE_HASH_KEY = newServerInfo.baseHashKey
 
   const dbAlreadyExists = fs.existsSync(dbFileName)
   if (dbAlreadyExists) {
@@ -188,7 +183,7 @@ const reSyncData = async function () {
   // Initialize the read-only engine
   qe = new QueryEngine(dbFileName)
   status = 'ready'
-  console.log('Server base hash key: ' + SMT_SERVER_INFO.baseHashKey)
+  console.log('Server base hash key: ' + BASE_HASH_KEY)
 }
 
 await reSyncData()
@@ -207,7 +202,7 @@ setInterval(reSyncPeriodic, 3600 * 1000);
 const insertQuery = function (q) {
   // Inject a key unique to each revision of the input data
   // this ensure the hash depends on query + data content
-  q.baseHashKey = SMT_SERVER_INFO.baseHashKey
+  q.baseHashKey = BASE_HASH_KEY
   const hash = hash_sum(q)
   hashToQuery[hash] = q
   return hash
@@ -229,7 +224,7 @@ app.get('/api/v1/smtConfig', (req, res) => {
 })
 
 app.get('/api/v1/:serverHash/query', async (req, res) => {
-  if (req.params.serverHash !== SMT_SERVER_INFO.baseHashKey) {
+  if (req.params.serverHash !== BASE_HASH_KEY) {
     res.status(404).send()
     return
   }
@@ -240,7 +235,7 @@ app.get('/api/v1/:serverHash/query', async (req, res) => {
 })
 
 app.get('/api/v1/:serverHash/queryVisual', (req, res) => {
-  if (req.params.serverHash !== SMT_SERVER_INFO.baseHashKey) {
+  if (req.params.serverHash !== BASE_HASH_KEY) {
     res.status(404).send()
     return
   }
