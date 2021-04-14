@@ -55,7 +55,6 @@ import SmtPanelRootToolbar from './smt-panel-root-toolbar.vue'
 import SmtLayer from './smt-layer.vue'
 import draggable from 'vuedraggable'
 import _ from 'lodash'
-import Vue from 'vue'
 import download from 'downloadjs'
 
 export default {
@@ -68,9 +67,7 @@ export default {
   },
   methods: {
     updateLayerConstraints: function (index, newConstraints) {
-      const l = _.cloneDeep(this.layersList[index])
-      l.constraints = _.cloneDeep(newConstraints)
-      Vue.set(this.layersList, index, l)
+      this.layersList[index].constraints = _.cloneDeep(newConstraints)
     },
     renameLayer: async function () {
       const res = await this.$dialog.prompt({
