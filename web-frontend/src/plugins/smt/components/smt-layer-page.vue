@@ -41,7 +41,7 @@
 
     </v-chip-group>
     <div style="height: calc(100% - 38px - 48px);">
-      <v-tabs-items v-model="tab" style="height: 100%;">
+      <v-tabs-items v-model="tab" style="height: 100%;  overflow: visible;">
         <v-tab-item :eager="true" v-for="(layer, index) in layersList" :key="layer.id" style="height: 100%; display: flex; flex-flow: column;">
           <smt-layer :name="layer.name" :z="index" :constraints="layer.constraints" @update:constraints="updateLayerConstraints(index, $event)" :current="index === tab" v-on:registerClickCb="onRegisterClickCb" v-on:unregisterClickCb="onUnregisterClickCb"></smt-layer>
         </v-tab-item>
