@@ -32,9 +32,13 @@ services:
      - smt-server
     container_name: smt-server-nginx-front
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.smt-server-nginx-front.rule=Host(`smt.stellarium-web.org`)"
-      - "traefik.http.routers.smt-server-nginx-front.entrypoints=websecure"
-      - "traefik.http.routers.smt-server-nginx-front.tls.certresolver=myresolver"
-      - "traefik.http.services.smt-server-nginx-front.loadbalancer.server.port=8100"
+      - traefik.enable=true
+      - traefik.http.middlewares.smt-server-nginx-front-redirect-web-secure.redirectscheme.scheme=https
+      - traefik.http.routers.smt-server-nginx-front-web.middlewares=smt-server-nginx-front-redirect-web-secure
+      - traefik.http.routers.smt-server-nginx-front-web.rule=Host(`smt.stellarium-web.org`)
+      - traefik.http.routers.smt-server-nginx-front-web.entrypoints=web
+      - traefik.http.routers.smt-server-nginx-front-websecure.rule=Host(`smt.stellarium-web.org`)
+      - traefik.http.routers.smt-server-nginx-front-websecure.entrypoints=websecure
+      - traefik.http.routers.smt-server-nginx-front-websecure.tls.certresolver=myresolver
+      - traefik.http.services.smt-server-nginx-front-websecure.loadbalancer.server.port=8100
     network_mode: bridge
