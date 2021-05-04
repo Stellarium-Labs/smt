@@ -13,7 +13,6 @@ import SmtLayerPage from './components/smt-layer-page.vue'
 import storeModule from './store'
 import Vue from 'vue'
 import VueGoogleCharts from 'vue-google-charts'
-import qe from './query-engine'
 import vuetify from '@/plugins/vuetify'
 import VuetifyDialog from 'vuetify-dialog'
 import 'vuetify-dialog/dist/vuetify-dialog.css'
@@ -30,7 +29,8 @@ export default {
   name: 'SMT',
   storeModule: storeModule,
   panelRoutes: [
-    { path: '/p/smt', component: SmtLayerPage, meta: { tabName: 'Survey Tool', prio: 1 } }
+    { path: '/p/smt/:branch', component: SmtLayerPage, meta: { tabName: 'Survey Tool', prio: 1 } },
+    { path: '/p/smt/', redirect: '/p/smt/main' }
   ],
   onEngineReady: async function (app) {
     app.$store.commit('setValue', { varName: 'SMT.status', newValue: 'initializing' })
@@ -80,17 +80,5 @@ export default {
     core.dsos.addDataSource({ url: doUrl + 'swe-data-packs/base/2020-03-11/base_2020-03-11_5fb747de/dso' })
     core.dsos.addDataSource({ url: doUrl + 'swe-data-packs/extended/2020-03-11/extended_2020-03-11_26aa5ab8/dso' })
     app.dataSourceInitDone = true
-
-    const statusChangedCb = function (status) {
-      if (status === 'ready') {
-        Vue.prototype.$smt = qe.smtConfig
-        app.$store.commit('setValue', { varName: 'SMT.smtServerInfo', newValue: qe.smtServerInfo })
-        if (qe.smtConfig.watermarkImage) {
-          app.$store.commit('setValue', { varName: 'SMT.watermarkImage', newValue: qe.smtConfig.watermarkImage })
-        }
-      }
-      app.$store.commit('setValue', { varName: 'SMT.status', newValue: status })
-    }
-    await qe.init(statusChangedCb)
   }
 }

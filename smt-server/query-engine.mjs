@@ -51,7 +51,7 @@ export default class QueryEngine {
   #fieldsList = undefined
   #fieldsMap = undefined
   #db = undefined
-  #dbFileName = undefined
+  dbFileName = undefined
   smtConfig = undefined
 
   // the thread pool used to run async functions
@@ -60,7 +60,7 @@ export default class QueryEngine {
   constructor(dbFileName) {
     let that = this
     assert(fs.existsSync(dbFileName))
-    that.#dbFileName = dbFileName
+    that.dbFileName = dbFileName
     const db = new Database(dbFileName, { readonly: true });
     that.smtConfig = JSON.parse(db.prepare('SELECT smt_config from smt_meta_data').get().smt_config)
     that.extraInfo = JSON.parse(db.prepare('SELECT extra_info from smt_meta_data').get().extra_info)
@@ -275,11 +275,11 @@ export default class QueryEngine {
   }
 
   queryAsync (...parameters) {
-    return QueryEngine.pool.exec('query', [this.#dbFileName].concat(parameters))
+    return QueryEngine.pool.exec('query', [this.dbFileName].concat(parameters))
   }
 
   getHipsTileAsync (...parameters) {
-    return QueryEngine.pool.exec('getHipsTile', [this.#dbFileName].concat(parameters))
+    return QueryEngine.pool.exec('getHipsTile', [this.dbFileName].concat(parameters))
   }
 
   // Construct the SQL WHERE clause matching the given constraints

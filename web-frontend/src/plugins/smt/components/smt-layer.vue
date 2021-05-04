@@ -209,7 +209,7 @@ export default {
         if (that.refreshCount !== refreshCount) return
         that.clearGeoJson()
         that.geojsonObj = that.$observingLayer.add('geojson-survey', {
-          path: process.env.VUE_APP_SMT_SERVER + '/api/v1/hips/' + res
+          path: process.env.VUE_APP_SMT_SERVER + '/api/v1/' + qe.branch + '/hips/' + res
           // Optional:
           // max_fov: 30,
           // min_fov: 10

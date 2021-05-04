@@ -16,7 +16,7 @@ var qe
 
 // The DB used to initialize the engine.
 function lasyInit(dbFileName) {
-  if (qe) return
+  if (qe && qe.dbFileName === dbFileName) return
   console.log('Init worker on DB: ' + dbFileName)
   qe = new QueryEngine(dbFileName)
 }

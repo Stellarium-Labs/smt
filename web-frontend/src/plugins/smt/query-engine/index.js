@@ -23,10 +23,11 @@ export default {
   smtServerInfo: undefined,
   status: 'unknown',
   statusChangedCb: undefined,
+  branch: 'main',
 
   getServerStatus: async function () {
     try {
-      const resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/status', {
+      const resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.branch + '/status', {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json'
@@ -47,7 +48,7 @@ export default {
 
     if (s === 'ready') {
       // The status just went to ready, update server information
-      let resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/smtServerInfo', {
+      let resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.branch + '/smtServerInfo', {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json'
@@ -55,7 +56,7 @@ export default {
       })
       this.smtServerInfo = await resp.json()
 
-      resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/smtConfig', {
+      resp = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.branch + '/smtConfig', {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json'
@@ -77,7 +78,8 @@ export default {
     if (this.statusChangedCb) this.statusChangedCb(s)
   },
 
-  init: async function (statusChangedCb) {
+  init: async function (branch, statusChangedCb) {
+    this.branch = branch
     if (statusChangedCb) this.statusChangedCb = statusChangedCb
     while (true) {
       await this.setStatus(await this.getServerStatus())
@@ -100,7 +102,7 @@ export default {
     try {
       console.assert(this.smtServerInfo.baseHashKey)
       const body = encodeURIComponent(this.queryToString(q))
-      const response = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.smtServerInfo.baseHashKey + '/query?q=' + body, {
+      const response = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.branch + '/' + this.smtServerInfo.baseHashKey + '/query?q=' + body, {
         method: 'GET',
         headers: {
           Accept: 'application/json',
@@ -121,7 +123,7 @@ export default {
     try {
       console.assert(this.smtServerInfo.baseHashKey)
       const body = encodeURIComponent(stableStringify(q))
-      const response = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.smtServerInfo.baseHashKey + '/queryVisual?q=' + body, {
+      const response = await fetch(process.env.VUE_APP_SMT_SERVER + '/api/v1/' + this.branch + '/' + this.smtServerInfo.baseHashKey + '/queryVisual?q=' + body, {
         method: 'GET',
         headers: {
           Accept: 'application/json',

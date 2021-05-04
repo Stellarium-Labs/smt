@@ -21,13 +21,9 @@ import hash_sum from 'hash-sum'
 
 const SMT_VERSION = process.env.npm_package_version || 'dev'
 const DATA_GIT_SERVER = 'git@github.com:Stellarium-Labs/smt-data.git'
-const DATA_GIT_BRANCH = process.env.SMT_DATA_BRANCH || 'master'
+const DATA_GIT_BRANCHES = ['main', 'reprocessing', 'integration']
 
-var BASE_HASH_KEY = ''
-
-let status = 'starting'
-
-console.log('Starting SMT Server ' + SMT_VERSION + ' on data branch ' + DATA_GIT_BRANCH)
+console.log('Starting SMT Server ' + SMT_VERSION + ' on branches ' + DATA_GIT_BRANCHES)
 
 const app = express()
 app.use(cors())
@@ -123,28 +119,50 @@ const syncGitData = async function (gitServer, gitBranch) {
   return ret
 }
 
+const BRANCH_DATA = {}
+for (let b of DATA_GIT_BRANCHES) {
+  BRANCH_DATA[b] = {
+    status: 'starting',
+    // Name of the SQLite DB file
+    dbFileName: __dirname + '/qe-' + b + '.db',
+    // Query engine instance for this branch
+    qe: undefined,
+    // Base hash key for this branche used to generate cache-friendly URLs
+    BASE_HASH_KEY: '',
+    // Global storage of hash -> query for later lookup
+    hashToQuery: {}
+  }
+}
+
 // Start listening to connection even during startup
 app.listen(port, () => {
   console.log(`SMT Server listening at http://localhost:${port}`)
 })
 
-app.get('/api/v1/status', (req, res) => {
-  res.send({status: status})
+app.get('/api/v1/:branch/status', (req, res) => {
+  const branchData = BRANCH_DATA[req.params.branch]
+  if (!branchData) {
+    res.status(404).send()
+    return
+  }
+  res.send({status: branchData.status})
 })
 
-const dbFileName = __dirname + '/qe.db'
-var qe
-// Global storage of hash -> query for later lookup
-var hashToQuery = {}
-
 const reSyncData = async function () {
-  status = 'syncing data'
-  const newServerInfo = await syncGitData(DATA_GIT_SERVER, DATA_GIT_BRANCH)
+  for (let b of DATA_GIT_BRANCHES) {
+    await reSyncDataForBranch(b)
+  }
+}
+
+const reSyncDataForBranch = async function (branch) {
+  const branchData = BRANCH_DATA[branch]
+  branchData.status = 'syncing data'
+  const newServerInfo = await syncGitData(DATA_GIT_SERVER, branch)
 
   // Check if we can preserve the previous DB to avoid re-loading the whole DB
   let reloadGeojson = true
   try {
-    const dbServerInfo = QueryEngine.getDbExtraInfo(dbFileName)
+    const dbServerInfo = QueryEngine.getDbExtraInfo(branchData.dbFileName)
     if (dbServerInfo && fs.existsSync('dontReloadGeojson')) {
       reloadGeojson = false
     }
@@ -155,41 +173,44 @@ const reSyncData = async function () {
 
   if (!reloadGeojson) {
     console.log('Data was not changed, no need to reload DB')
-    if (!qe) qe = new QueryEngine(dbFileName)
-    status = 'ready'
+    if (!branchData.qe) branchData.qe = new QueryEngine(branchData.dbFileName)
+    branchData.status = 'ready'
     return
   }
 
   console.log('Data or code has changed since last start: reload geojson')
-  status = 'loading data'
-  await QueryEngine.generateDb(__dirname + '/data/', dbFileName + '-tmp', newServerInfo)
+  branchData.status = 'loading data'
+  await QueryEngine.generateDb(__dirname + '/data/', branchData.dbFileName + '-tmp', newServerInfo)
   console.log('*** DB Loading finished ***')
 
   // Replace production DB
   // Stop running queries if any
-  if (qe) await QueryEngine.deinit()
+  if (branchData.qe) await QueryEngine.deinit()
   // Clear query hash list
-  hashToQuery = {}
+  branchData.hashToQuery = {}
   // Reset server base hash key
-  BASE_HASH_KEY = newServerInfo.baseHashKey
+  branchData.BASE_HASH_KEY = newServerInfo.baseHashKey
 
-  const dbAlreadyExists = fs.existsSync(dbFileName)
+  const dbAlreadyExists = fs.existsSync(branchData.dbFileName)
   if (dbAlreadyExists) {
     // supress previous DB
-    fs.unlinkSync(dbFileName)
+    fs.unlinkSync(branchData.dbFileName)
   }
-  fs.renameSync(dbFileName + '-tmp', dbFileName)
+  fs.renameSync(branchData.dbFileName + '-tmp', branchData.dbFileName)
 
   // Initialize the read-only engine
-  qe = new QueryEngine(dbFileName)
-  status = 'ready'
-  console.log('Server base hash key: ' + BASE_HASH_KEY)
+  branchData.qe = new QueryEngine(branchData.dbFileName)
+  branchData.status = 'ready'
+  console.log('Server base hash key: ' + branchData.BASE_HASH_KEY)
 }
 
 await reSyncData()
 
 function reSyncPeriodic () {
-  if (status !== 'ready') return
+  for (let b of DATA_GIT_BRANCHES) {
+    const branchData = BRANCH_DATA[branch]
+    if (branchData.status !== 'ready') return
+  }
   console.log('\n-- Periodic data check --')
   reSyncData()
 }
@@ -199,73 +220,104 @@ setInterval(reSyncPeriodic, 3600 * 1000);
 
 // Insert this query in the global list of hash -> query for later lookup
 // Returns a unique hash key referencing this query
-const insertQuery = function (q) {
+const insertQuery = function (branch, q) {
+  const branchData = BRANCH_DATA[branch]
   // Inject a key unique to each revision of the input data
   // this ensure the hash depends on query + data content
-  q.baseHashKey = BASE_HASH_KEY
+  q.baseHashKey = branchData.BASE_HASH_KEY
   const hash = hash_sum(q)
-  hashToQuery[hash] = q
+  branchData.hashToQuery[hash] = q
   return hash
 }
 
 // Returns the query matching this hash key
-const lookupQuery = function (hash) {
-  if (!(hash in hashToQuery))
+const lookupQuery = function (branch, hash) {
+  const branchData = BRANCH_DATA[branch]
+  if (!(hash in branchData.hashToQuery))
     return undefined
-  return _.cloneDeep(hashToQuery[hash])
+  return _.cloneDeep(branchData.hashToQuery[hash])
 }
 
-app.get('/api/v1/smtServerInfo', (req, res) => {
-  res.send(qe.extraInfo)
+app.get('/api/v1/:branch/smtServerInfo', (req, res) => {
+  const branchData = BRANCH_DATA[req.params.branch]
+  if (!branchData) {
+    res.status(404).send()
+    return
+  }
+  res.send(branchData.qe.extraInfo)
 })
 
-app.get('/api/v1/smtConfig', (req, res) => {
-  res.send(qe.smtConfig)
+app.get('/api/v1/:branch/smtConfig', (req, res) => {
+  const branchData = BRANCH_DATA[req.params.branch]
+  if (!branchData) {
+    res.status(404).send()
+    return
+  }
+  res.send(branchData.qe.smtConfig)
 })
 
-app.get('/api/v1/:serverHash/query', async (req, res) => {
-  if (req.params.serverHash !== BASE_HASH_KEY) {
+app.get('/api/v1/:branch/:serverHash/query', async (req, res) => {
+  const branchData = BRANCH_DATA[req.params.branch]
+  if (!branchData) {
+    res.status(404).send()
+    return
+  }
+  if (req.params.serverHash !== branchData.BASE_HASH_KEY) {
     res.status(404).send()
     return
   }
   const q = JSON.parse(decodeURIComponent(req.query.q))
   res.set('Cache-Control', 'public, max-age=31536000')
-  const queryResp = await qe.queryAsync(q)
+  const queryResp = await branchData.qe.queryAsync(q)
   res.send(queryResp)
 })
 
-app.get('/api/v1/:serverHash/queryVisual', (req, res) => {
-  if (req.params.serverHash !== BASE_HASH_KEY) {
+app.get('/api/v1/:branch/:serverHash/queryVisual', (req, res) => {
+  const branchData = BRANCH_DATA[req.params.branch]
+  if (!branchData) {
+    res.status(404).send()
+    return
+  }
+  if (req.params.serverHash !== branchData.BASE_HASH_KEY) {
     res.status(404).send()
     return
   }
   const q = JSON.parse(decodeURIComponent(req.query.q))
   res.set('Cache-Control', 'public, max-age=31536000')
-  res.send(insertQuery(q))
+  res.send(insertQuery(req.params.branch, q))
 })
 
-app.get('/api/v1/hips/:queryHash/properties', (req, res) => {
-  if (!lookupQuery(req.params.queryHash)) {
+app.get('/api/v1/:branch/hips/:queryHash/properties', (req, res) => {
+  const branchData = BRANCH_DATA[req.params.branch]
+  if (!branchData) {
+    res.status(404).send()
+    return
+  }
+  if (!lookupQuery(req.params.branch, req.params.queryHash)) {
     res.status(404).send()
     return
   }
 
   res.set('Cache-Control', 'public, max-age=31536000')
   res.type('text/plain')
-  res.send(qe.getHipsProperties())
+  res.send(branchData.qe.getHipsProperties())
 })
 
-app.get('/api/v1/hips/:queryHash/:order(Norder\\d+)/:dir/:pix.geojson', async (req, res) => {
+app.get('/api/v1/:branch/hips/:queryHash/:order(Norder\\d+)/:dir/:pix.geojson', async (req, res) => {
+  const branchData = BRANCH_DATA[req.params.branch]
+  if (!branchData) {
+    res.status(404).send()
+    return
+  }
   res.set('Cache-Control', 'public, max-age=31536000')
-
   const order = parseInt(req.params.order.replace('Norder', ''))
   const pix = parseInt(req.params.pix.replace('Npix', ''))
-  const q = lookupQuery(req.params.queryHash)
+  const q = lookupQuery(req.params.branch, req.params.queryHash)
   if (!q) {
     res.status(404).send()
     return
   }
-  const tileResp = await qe.getHipsTileAsync(q, order, pix)
+  const tileResp = await branchData.qe.getHipsTileAsync(q, order, pix)
   if (!tileResp) {
     res.status(404).send()
     return
@@ -273,14 +325,19 @@ app.get('/api/v1/hips/:queryHash/:order(Norder\\d+)/:dir/:pix.geojson', async (r
   res.send(tileResp)
 })
 
-app.get('/api/v1/hips/:queryHash/Allsky.geojson', async (req, res) => {
+app.get('/api/v1/:branch/hips/:queryHash/Allsky.geojson', async (req, res) => {
+  const branchData = BRANCH_DATA[req.params.branch]
+  if (!branchData) {
+    res.status(404).send()
+    return
+  }
   res.set('Cache-Control', 'public, max-age=31536000')
-  const q = lookupQuery(req.params.queryHash)
+  const q = lookupQuery(req.params.branch, req.params.queryHash)
   if (!q) {
     res.status(404).send()
     return
   }
-  const tileResp = await qe.getHipsTileAsync(q, -1, 0)
+  const tileResp = await branchData.qe.getHipsTileAsync(q, -1, 0)
   if (!tileResp) {
     res.status(404).send()
     return

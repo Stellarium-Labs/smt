@@ -56,6 +56,8 @@ import SmtLayer from './smt-layer.vue'
 import draggable from 'vuedraggable'
 import _ from 'lodash'
 import download from 'downloadjs'
+import qe from '../query-engine'
+import Vue from 'vue'
 
 export default {
   data: function () {
@@ -130,6 +132,19 @@ export default {
   },
   created: function () {
     this.clickCallbacks = []
+
+    const that = this
+    const statusChangedCb = function (status) {
+      if (status === 'ready') {
+        Vue.prototype.$smt = qe.smtConfig
+        that.$store.commit('setValue', { varName: 'SMT.smtServerInfo', newValue: qe.smtServerInfo })
+        if (qe.smtConfig.watermarkImage) {
+          that.$store.commit('setValue', { varName: 'SMT.watermarkImage', newValue: qe.smtConfig.watermarkImage })
+        }
+      }
+      that.$store.commit('setValue', { varName: 'SMT.status', newValue: status })
+    }
+    qe.init(that.$route.params.branch, statusChangedCb)
   },
   mounted: function () {
     // Manage geojson features selection
