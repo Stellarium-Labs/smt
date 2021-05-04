@@ -185,7 +185,6 @@ const reSyncDataForBranch = async function (branch) {
   console.log('Data or code has changed since last start: reload geojson')
   branchData.status = 'loading data'
   await QueryEngine.generateDb(__dirname + '/data/', branchData.dbFileName + '-tmp', newServerInfo)
-  console.log('*** DB Loading finished ***')
 
   // Replace production DB
   // Stop running queries if any
@@ -205,7 +204,8 @@ const reSyncDataForBranch = async function (branch) {
   // Initialize the read-only engine
   branchData.qe = new QueryEngine(branchData.dbFileName)
   branchData.status = 'ready'
-  console.log('Server base hash key: ' + branchData.BASE_HASH_KEY)
+  console.log('Base hash key for branch ' + branch + ': ' + branchData.BASE_HASH_KEY)
+  console.log('*** Data Sync for branch ' + branch + ' completed ***')
 }
 
 await reSyncData()
