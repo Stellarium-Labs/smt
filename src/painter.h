@@ -19,10 +19,10 @@
 
 typedef struct obj obj_t;
 typedef struct observer observer_t;
-typedef struct renderer renderer_t;
 typedef struct painter painter_t;
 typedef struct point point_t;
 typedef struct texture texture_t;
+typedef struct renderer renderer_t;
 
 // Base font size in pixels
 #define FONT_SIZE_BASE 15
@@ -54,7 +54,6 @@ enum {
     TEXT_BOLD      = 1 << 1,
     TEXT_SMALL_CAP = 1 << 2,
     TEXT_DEMI_BOLD = 1 << 3,
-    TEXT_BLEND_ADD = 1 << 4, // Use ADD blending.
     // Only used in the label manager.  If set, the text position or opacity
     // can be changed dynamically to avoid collisions.
     TEXT_FLOAT     = 1 << 5,
@@ -67,97 +66,6 @@ enum {
     MODE_LINES,
     MODE_POINTS,
 };
-
-struct renderer
-{
-    void (*prepare)(renderer_t *rend,
-                    double win_w, double win_h, double scale,
-                    bool cull_flipped);
-    void (*finish)(renderer_t *rend);
-
-    void (*points_2d)(renderer_t        *rend,
-                   const painter_t      *painter,
-                   int                  n,
-                   const point_t        *points);
-
-    void (*quad)(renderer_t          *rend,
-                 const painter_t     *painter,
-                 int                 frame,
-                 int                 grid_size,
-                 const uv_map_t      *map);
-
-    void (*quad_wireframe)(renderer_t           *rend,
-                           const painter_t      *painter,
-                           int                  frame,
-                           int                  grid_size,
-                           const uv_map_t       *map);
-
-    void (*texture)(renderer_t       *rend,
-                    const texture_t  *tex,
-                    double           uv[4][2],
-                    const double     pos[2],
-                    double           size,
-                    const double     color[4],
-                    double           angle);
-
-    void (*text)(renderer_t      *rend,
-                 const painter_t *painter,
-                 const char      *text,
-                 const double    pos[2],
-                 int             align,
-                 int             effects,
-                 double          size,
-                 const double    color[4],
-                 double          angle,
-                 double          bounds[4]    // Output, can be NULL.
-                 );
-
-    void (*line)(renderer_t           *rend,
-                 const painter_t      *painter,
-                 const double         (*line)[3],
-                 int                  size);
-
-    void (*mesh)(renderer_t          *rend,
-                 const painter_t     *painter,
-                 int                 frame,
-                 int                 mode,
-                 int                 verts_count,
-                 const double        verts[][3],
-                 int                 indices_count,
-                 const uint16_t      indices[],
-                 bool                use_stencil);
-
-    void (*ellipse_2d)(renderer_t       *rend,
-                       const painter_t  *painter,
-                       const double     pos[2],
-                       const double     size[2],
-                       double           angle,
-                       double           nb_dashes);
-
-    void (*rect_2d)(renderer_t          *rend,
-                    const painter_t     *painter,
-                    const double        pos[2],
-                    const double        size[2],
-                    double              angle);
-
-    void (*line_2d)(renderer_t          *rend,
-                    const painter_t     *painter,
-                    const double        p1[2],
-                    const double        p2[2]);
-
-    void (*model_3d)(renderer_t         *rend,
-                     const painter_t    *painter,
-                     const char         *model,
-                     const double       model_mat[4][4],
-                     const double       view_mat[4][4],
-                     const double       proj_mat[4][4],
-                     const double       light_dir[3],
-                     json_value         *args);
-};
-
-renderer_t* render_gl_create(void);
-renderer_t* render_svg_create(const char *out);
-
 
 struct point
 {
@@ -176,11 +84,12 @@ enum {
     PAINTER_IS_MOON             = 1 << 6, // Only for moon texture!
     PAINTER_ATMOSPHERE_SHADER   = 1 << 8,
     PAINTER_FOG_SHADER          = 1 << 9,
+    PAINTER_ENABLE_DEPTH        = 1 << 10,
 
     // Passed to paint_lines.
-    PAINTER_SKIP_DISCONTINUOUS  = 1 << 10,
+    PAINTER_SKIP_DISCONTINUOUS  = 1 << 14,
     // Allow the renderer to reorder this item for batch optimiziation.
-    PAINTER_ALLOW_REORDER       = 1 << 11,
+    PAINTER_ALLOW_REORDER       = 1 << 15,
 };
 
 enum {
@@ -243,6 +152,7 @@ struct painter
             double          (*shadow_spheres)[4]; // pos + radius.
             texture_t       *shadow_color_tex; // Used for lunar eclipses.
             float           scale; // The fake scale we used.
+            float           min_brightness;
         } planet;
 
         // For atmosphere rendering only.
@@ -384,7 +294,8 @@ int paint_mesh(const painter_t *painter, int frame, int mode,
 
 
 int paint_text_bounds(const painter_t *painter, const char *text,
-                      const double pos[2], int align, int effects,
+                      const double win_pos[2],
+                      int align, int effects,
                       double size, double bounds[4]);
 
 /*
@@ -393,14 +304,16 @@ int paint_text_bounds(const painter_t *painter, const char *text,
  *
  * Parameters:
  *   text       - The text to render.
- *   pos        - Text position in window coordinates.
+ *   win_pos    - Text position in window coordinates.
+ *   view_pos   - Optional text position in view coordinates (for depth).
  *   align      - Union of <ALIGN_FLAGS>.
  *   effects    - Union of <TEXT_EFFECT_FLAGS>.
  *   size       - Text size in window unit.
  *   angle      - Angle in radian.
  */
 int paint_text(const painter_t *painter,
-               const char *text, const double pos[2], int align,
+               const char *text, const double win_pos[2],
+               const double view_pos[3], int align,
                int effects, double size, double angle);
 
 /*
@@ -431,7 +344,6 @@ void paint_debug(bool value);
  *   painter    - A painter.
  *   frame      - One of the <FRAME> enum frame.
  *   map        - The mapping function from UV to the 3D space.
- *   outside    - Set whether the quad is an outside (not planet) tile.
  *
  * Returns:
  *   True if the quad is clipped, false otherwise.
@@ -441,7 +353,7 @@ void paint_debug(bool value);
  *   even though a quad is not actually visible.
  */
 bool painter_is_quad_clipped(const painter_t *painter, int frame,
-                             const uv_map_t *map, bool outside);
+                             const uv_map_t *map);
 
 
 // Function: painter_is_healpix_clipped
@@ -453,7 +365,6 @@ bool painter_is_quad_clipped(const painter_t *painter, int frame,
 //  frame     - One of the <FRAME> enum frame.
 //  order     - Healpix order.
 //  pix       - Healpix pix.
-//  outside   - Set whether the tile is an outside (not planet) tile.
 //
 // Returns:
 //  True if the tile is clipped, false otherwise.
@@ -462,7 +373,24 @@ bool painter_is_quad_clipped(const painter_t *painter, int frame,
 //  that a non visible tile is clipped.  So this function can return false
 //  even though a tile is not actually visible.
 bool painter_is_healpix_clipped(const painter_t *painter, int frame,
-                                int order, int pix, bool outside);
+                                int order, int pix);
+
+/*
+ * Function: painter_is_planet_healpix_clipped
+ * Check if a healpix pixel on the surface of a planet is clipped.
+ *
+ * Parameters:
+ *   painter    - A painter.
+ *   transf     - 4x4 matrix providing the planet position / scale.
+ *   order      - Healpix order.
+ *   pix        - Healpix pix.
+ *
+ * Return:
+ *   True if the pixel is guarantied to be clipped.
+ */
+bool painter_is_planet_healpix_clipped(const painter_t *painter,
+                                       const double transf[4][4],
+                                       int order, int pix);
 
 // Function: painter_is_point_clipped_fast
 //

@@ -98,6 +98,10 @@ typedef struct planets {
     // Hints/labels magnitude offset
     double hints_mag_offset;
     bool   hints_visible;
+    bool   scale_moon;
+    // Orbit render mode:
+    // 0: No orbit.  1: Render selection children orbits.
+    int    orbits_mode;
 } planets_t;
 
 // Static instance.
@@ -186,7 +190,7 @@ static void moon_icrf_geocentric_pos(double tt, double pos[3])
     double lambda, beta, dist, obl;
     // Get ecliptic position of date.
     moon_pos(DJM0 + tt, &lambda, &beta, &dist);
-    dist *= 1000.0 / DAU; // km to AU.
+    dist *= 1000.0 * DM2AU; // km to AU.
     // Convert to equatorial.
     obl = eraObl06(DJM0, tt); // Mean oblicity of ecliptic at J2000.
     eraIr(rmatecl);
@@ -361,7 +365,7 @@ static void planet_get_pvo(const planet_t *planet, const observer_t *obs,
     eraPvmpv(pvo, obs->obs_pvb, pvo);
 
     // Apply light speed adjustment.
-    ldt = vec3_norm(pvo[0]) * DAU / LIGHT_YEAR_IN_METER * DJY;
+    ldt = vec3_norm(pvo[0]) * DAU2M / LIGHT_YEAR_IN_METER * DJY;
     observer_t obs2 = *obs;
     obs2.tt -= ldt;
     observer_update(&obs2, true);
@@ -403,12 +407,12 @@ static double compute_sun_eclipse_factor(const planet_t *sun,
     double pvo[2][3];
     planet_t *p;
 
-    sun_r = 2.0 * sun->radius_m / DAU / vec3_norm(obs->sun_pvo[0]);
+    sun_r = 2.0 * sun->radius_m * DM2AU / vec3_norm(obs->sun_pvo[0]);
 
     PLANETS_ITER(sun->obj.parent, p) {
         if (p->id != MOON) continue; // Only consider the Moon.
         planet_get_pvo(p, obs, pvo);
-        sph_r = 2.0 * p->radius_m / DAU / vec3_norm(pvo[0]);
+        sph_r = 2.0 * p->radius_m * DM2AU / vec3_norm(pvo[0]);
         sep = eraSepp(obs->sun_pvo[0], pvo[0]);
         // Compute shadow factor.
         // XXX: this should be in algos.
@@ -542,11 +546,55 @@ static double planet_get_vmag(const planet_t *planet, const observer_t *obs)
     }
 }
 
+/*
+ * Compute the rotation of a planet along its axis.
+ *
+ * Parameters:
+ *   planet     - A planet.
+ *   tt         - TT time (MJD).
+ *
+ * Return:
+ *   The rotation angle in radian.
+ */
+static double planet_get_rotation(const planet_t *planet, double tt)
+{
+    if (!planet->rot.period) return 0;
+    return (tt - DJM00) / planet->rot.period * 2 * M_PI + planet->rot.offset;
+}
+
+static void planet_get_mat(const planet_t *planet, const observer_t *obs,
+                           double mat[4][4])
+{
+    double radius = planet->radius_m * DM2AU;
+    double pvo[2][3];
+    double tmp_mat[4][4];
+
+    mat4_set_identity(mat);
+    planet_get_pvo(planet, obs, pvo);
+    mat4_itranslate(mat, pvo[0][0], pvo[0][1], pvo[0][2]);
+    mat4_iscale(mat, radius, radius, radius);
+
+    // Apply the rotation.
+    // Use pole ra/de position if available, else try with obliquity.
+    // XXX: Probably need to remove obliquity.
+    if (planet->rot.pole_ra || planet->rot.pole_de) {
+        mat4_rz(planet->rot.pole_ra, mat, mat);
+        mat4_ry(M_PI / 2 - planet->rot.pole_de, mat, mat);
+    } else {
+        mat3_to_mat4(obs->re2i, tmp_mat);
+        mat4_mul(mat, tmp_mat, mat);
+        mat4_rx(-planet->rot.obliquity, mat, mat);
+    }
+    mat4_rz(planet_get_rotation(planet, obs->tt), mat, mat);
+}
+
+
 static int planet_get_info(const obj_t *obj, const observer_t *obs, int info,
                            void *out)
 {
     planet_t *planet = (planet_t*)obj;
     double pvo[2][3];
+    double mat[4][4];
 
     switch (info) {
     case INFO_PVO:
@@ -560,7 +608,11 @@ static int planet_get_info(const obj_t *obj, const observer_t *obs, int info,
         return 0;
     case INFO_RADIUS:
         planet_get_pvo(planet, obs, pvo);
-        *(double*)out = planet->radius_m / DAU / vec3_norm(pvo[0]);
+        *(double*)out = planet->radius_m * DM2AU / vec3_norm(pvo[0]);
+        return 0;
+    case INFO_POLE:
+        planet_get_mat(planet, obs, mat);
+        vec3_copy(mat[2], (double*)out);
         return 0;
     default:
         return 1;
@@ -578,11 +630,9 @@ static void planet_get_designations(
 
 static int on_render_tile(hips_t *hips, const painter_t *painter_,
                           const double transf[4][4],
-                          int order, int pix, int split, int flags, void *user)
+                          int order, int pix, int split, int flags,
+                          planet_t *planet, int *nb_tot, int *nb_loaded)
 {
-    planet_t *planet = USER_GET(user, 0);
-    int *nb_tot = USER_GET(user, 1);
-    int *nb_loaded = USER_GET(user, 2);
     painter_t painter = *painter_;
     texture_t *tex, *normalmap = NULL;
     uv_map_t map;
@@ -656,7 +706,7 @@ static void render_rings(const planet_t *planet,
                   painter.planet.shadow_spheres[
                                     painter.planet.shadow_spheres_nb]);
         painter.planet.shadow_spheres[painter.planet.shadow_spheres_nb][3] =
-                  planet->radius_m / DAU;
+                  planet->radius_m * DM2AU;
         painter.planet.shadow_spheres_nb++;
     }
 
@@ -677,7 +727,7 @@ static bool could_cast_shadow(const planet_t *a, const planet_t *b,
                               const observer_t *obs)
 {
     // Not sure about this algo, I took it pretty as it is from Stellarium.
-    const double SUN_RADIUS = 695508000.0 / DAU;
+    const double SUN_RADIUS = 695508000.0 * DM2AU;
     double pp[3];
     double shadow_dist, d, penumbra_r;
     double apvh[2][3], bpvh[2][3];
@@ -696,11 +746,11 @@ static bool could_cast_shadow(const planet_t *a, const planet_t *b,
     if (vec3_norm2(apvh[0]) > vec3_norm2(bpvh[0])) return false;
     vec3_normalize(apvh[0], pp);
     shadow_dist = vec3_dot(pp, bpvh[0]);
-    d = vec2_norm(apvh[0]) / (a->radius_m / DAU / SUN_RADIUS + 1.0);
+    d = vec2_norm(apvh[0]) / (a->radius_m * DM2AU / SUN_RADIUS + 1.0);
     penumbra_r = (shadow_dist - d) / d * SUN_RADIUS;
     vec3_mul(shadow_dist, pp, pp);
     vec3_sub(pp, bpvh[0], pp);
-    return (vec3_norm(pp) < penumbra_r + b->radius_m / DAU);
+    return (vec3_norm(pp) < penumbra_r + b->radius_m * DM2AU);
 }
 
 static int sort_shadow_cmp(const void *a, const void *b)
@@ -734,13 +784,13 @@ static int get_shadow_candidates(const planet_t *planet,
             // No more space: replace the smallest one in the list if
             // we can.
             if (nb >= nb_max) {
-                if (other->radius_m / DAU < spheres[nb_max - 1][3])
+                if (other->radius_m * DM2AU < spheres[nb_max - 1][3])
                     continue;
                 nb--; // Remove the last one.
             }
             planet_get_pvo(other, obs, pvo);
             vec3_copy(pvo[0], spheres[nb]);
-            spheres[nb][3] = other->radius_m / DAU;
+            spheres[nb][3] = other->radius_m * DM2AU;
             nb++;
             qsort(spheres, nb, 4 * sizeof(double), sort_shadow_cmp);
         }
@@ -748,33 +798,14 @@ static int get_shadow_candidates(const planet_t *planet,
     return nb;
 }
 
-/*
- * Compute the rotation of a planet along its axis.
- *
- * Parameters:
- *   planet     - A planet.
- *   tt         - TT time (MJD).
- *
- * Return:
- *   The rotation angle in radian.
- */
-static double planet_get_rotation(const planet_t *planet, double tt)
-{
-    if (!planet->rot.period) return 0;
-    return (tt - DJM00) / planet->rot.period * 2 * M_PI + planet->rot.offset;
-}
-
 static void planet_render_hips(const planet_t *planet,
                                const hips_t *hips,
-                               double radius,
                                double r_scale,
                                double alpha,
                                const painter_t *painter_)
 {
     // XXX: cleanup this function.  It is getting too big.
     double mat[4][4];
-    double tmp_mat[4][4];
-    double dist;
     double full_emit[3] = {1.0, 1.0, 1.0};
     double pvo[2][3];
     double angle;
@@ -782,18 +813,21 @@ static void planet_render_hips(const planet_t *planet,
     double sun_pos[4] = {0, 0, 0, 1};
     planets_t *planets = (planets_t*)planet->obj.parent;
     painter_t painter = *painter_;
-    double depth_range[2];
     double shadow_spheres[4][4];
     double pixel_size;
     int split_order;
+    int render_order;
+    int flags = 0;
+    int order, pix, split;
+    hips_iterator_t iter;
+    double radius = planet->radius_m * DM2AU; // Radius in AU.
 
     if (!hips) hips = planet->hips;
     assert(hips);
 
     planet_get_pvo(planet, painter.obs, pvo);
-    angle = 2 * radius * r_scale / vec2_norm(pvo[0]);
+    angle = 2 * radius * r_scale / vec3_norm(pvo[0]);
 
-    memset(&painter.planet, 0, sizeof(painter.planet));
     // Get potential shadow casting spheres.
     painter.planet.shadow_spheres_nb =
         get_shadow_candidates(planet, painter.obs, 4, shadow_spheres);
@@ -802,28 +836,14 @@ static void planet_render_hips(const planet_t *planet,
     painter.color[3] *= alpha;
     painter.flags |= PAINTER_PLANET_SHADER;
 
-    mat4_set_identity(mat);
-    mat4_itranslate(mat, pvo[0][0], pvo[0][1], pvo[0][2]);
-    mat4_iscale(mat, radius * r_scale, radius * r_scale, radius * r_scale);
+    planet_get_mat(planet, painter.obs, mat);
+    mat4_iscale(mat, r_scale, r_scale, r_scale);
     painter.planet.scale = r_scale;
 
     // Compute sun position.
     vec3_copy(painter.obs->sun_pvo[0], sun_pos);
-    sun_pos[3] = planets->sun->radius_m / DAU;
+    sun_pos[3] = planets->sun->radius_m * DM2AU;
     painter.planet.sun = &sun_pos;
-
-    // Apply the rotation.
-    // Use pole ra/de position if available, else try with obliquity.
-    // XXX: Probably need to remove obliquity.
-    if (planet->rot.pole_ra || planet->rot.pole_de) {
-        mat4_rz(planet->rot.pole_ra, mat, mat);
-        mat4_ry(M_PI / 2 - planet->rot.pole_de, mat, mat);
-    } else {
-        mat3_to_mat4(painter.obs->re2i, tmp_mat);
-        mat4_mul(mat, tmp_mat, mat);
-        mat4_rx(-planet->rot.obliquity, mat, mat);
-    }
-    mat4_rz(planet_get_rotation(planet, painter.obs->tt), mat, mat);
 
     if (planet->id == SUN)
         painter.planet.light_emit = &full_emit;
@@ -832,22 +852,40 @@ static void planet_render_hips(const planet_t *planet,
     // Lower current moon texture contrast.
     if (planet->id == MOON) painter.contrast = 0.6;
 
-    // Set the min required depth range needed with some margins for the
-    // actual planet size and the rings.
-    dist = vec3_norm(pvo[0]);
-    depth_range[0] = dist * 0.5;
-    depth_range[1] = dist * 2;
-    painter.depth_range = &depth_range;
-
     // Compute the required split order, based on the size of the planet
-    // on screen.
-    pixel_size = angle * painter.proj->window_size[0] /
-                 painter.proj->scaling[0] / 2;
+    // on screen.  Note: could we redo that properly?
+    pixel_size = core_get_point_for_apparent_angle(painter.proj, angle);
     split_order = ceil(mix(2, 5, smoothstep(100, 600, pixel_size)));
 
-    hips_render_traverse(hips, &painter, mat, angle, split_order,
-                         USER_PASS(planet, &nb_tot, &nb_loaded),
-                         on_render_tile);
+    render_order = hips_get_render_order_planet(hips, &painter, mat);
+    // For extrem low resolution force using the allsky if available so that
+    // we don't download too much data.
+    if (render_order < -4 && hips->allsky.data)
+        flags |= HIPS_FORCE_USE_ALLSKY;
+
+    // Clamp the render order into physically possible range.
+    // XXX: should be done in hips_get_render_order_planet I guess.
+    render_order = clamp(render_order, hips->order_min, hips->order);
+    render_order = min(render_order, 9); // Hard limit.
+
+    // Can't split less than the rendering order.
+    split_order = max(split_order, render_order);
+
+    // Iter the HiPS pixels and render them.
+    hips_update(hips);
+    hips_iter_init(&iter);
+    while (hips_iter_next(&iter, &order, &pix)) {
+        if (painter_is_planet_healpix_clipped(&painter, mat, order, pix))
+            continue;
+        if (order < render_order) { // Keep going.
+            hips_iter_push_children(&iter, order, pix);
+            continue;
+        }
+        split = 1 << (split_order - render_order);
+        on_render_tile(hips, &painter, mat, order, pix, split, flags,
+                       planet, &nb_tot, &nb_loaded);
+    }
+
     if (planet->rings.tex)
         render_rings(planet, &painter, mat);
     progressbar_report(planet->name, planet->name, nb_loaded, nb_tot, -1);
@@ -857,7 +895,6 @@ static void planet_render_hips(const planet_t *planet,
  * Render either the glTF 3d model, either the hips survey
  */
 static void planet_render_model(const planet_t *planet,
-                                double radius,
                                 double r_scale,
                                 double alpha,
                                 const painter_t *painter_)
@@ -866,30 +903,38 @@ static void planet_render_model(const planet_t *planet,
     double bounds[2][3], pvo[2][3];
     double model_mat[4][4] = MAT4_IDENTITY;
     double dist, depth_range[2];
+    double radius = planet->radius_m * DM2AU; // Radius in AU.
     painter_t painter = *painter_;
 
+    painter.flags |= PAINTER_ENABLE_DEPTH;
     ((planet_t*)planet)->no_model = planet->no_model ||
         painter_get_3d_model_bounds(&painter, planet->name, bounds);
+
+    // Make sure the planets attributes are not set (since this is a union!)
+    memset(&painter.planet, 0, sizeof(painter.planet));
+
+    // Adjust the min brightness to hide the shadow as we get closer.
+    planet_get_pvo(planet, painter.obs, pvo);
+    dist = vec3_norm(pvo[0]);
+    painter.planet.min_brightness =
+        min(0.2, smoothstep(2, 0, log(dist / radius)));
 
     if (planet->no_model) { // Use hips.
         hips = planet->hips ?: g_planets->default_hips;
         if (hips)
-            planet_render_hips(planet, hips, radius, r_scale, alpha, &painter);
+            planet_render_hips(planet, hips, r_scale, alpha, &painter);
         return;
     }
 
-    // Assume the model is in km.
-    planet_get_pvo(planet, painter.obs, pvo);
-
     // Set the min required depth range needed.
     // XXX: could be computed properly.
-    dist = vec3_norm(pvo[0]);
     depth_range[0] = dist * 0.5;
     depth_range[1] = dist * 2;
     painter.depth_range = &depth_range;
 
+    // Assume the model is in km.
     mat4_itranslate(model_mat, VEC3_SPLIT(pvo[0]));
-    mat4_iscale(model_mat, 1000 / DAU, 1000 / DAU, 1000 / DAU);
+    mat4_iscale(model_mat, 1000 * DM2AU, 1000 * DM2AU, 1000 * DM2AU);
     paint_3d_model(&painter, planet->name, model_mat, NULL);
 }
 
@@ -913,7 +958,7 @@ static void planet_compute_orbit_elements(
     const double SPD = 60 * 60 * 24;
     double p[3], v[3];
     // μ in (AU)³(day)⁻²
-    double mu = G * planet->parent->mass / (DAU * DAU * DAU) * SPD * SPD;
+    double mu = G * planet->parent->mass / (DAU2M * DAU2M * DAU2M) * SPD * SPD;
     double pvh[2][3], parent_pvh[2][3];
     planet_get_pvh(planet->parent, obs, parent_pvh);
     planet_get_pvh(planet, obs, pvh);
@@ -972,37 +1017,40 @@ static void planet_render_label(
 
     planet_get_pvo(planet, painter->obs, pvo);
     vec3_copy(pvo[0], pos);
-    vec3_normalize(pos, pos);
 
     // Radius on screen in pixel.
-    radius = planet->radius_m / DAU / vec3_norm(pvo[0]);
-    radius *= painter->proj->window_size[0] / painter->proj->scaling[0] / 2;
+    radius = asin(planet->radius_m * DM2AU / vec3_norm(pvo[0]));
+    radius = core_get_point_for_apparent_angle(painter->proj, radius);
     radius *= scale;
 
     s = point_size * 0.9;
     s = max(s, radius);
 
     labels_add_3d(name, FRAME_ICRF, pos,
-                  true, s + 4, FONT_SIZE_BASE,
+                  false, s + 4, FONT_SIZE_BASE,
                   selected ? white : label_color, 0, 0,
                   TEXT_SEMI_SPACED | TEXT_BOLD | (selected ? 0 : TEXT_FLOAT),
                   -vmag, &planet->obj);
 }
 
-// For the moment only consider the parent body of moons.
-// Used to prevent showing the planet moons labels behind a planet.
-static bool planet_is_occulted(const planet_t *planet, const painter_t *painter)
+static double get_artificial_scale(const planets_t *planets,
+                                   const planet_t *planet)
 {
-    double sep, pvo[2][3], parent_pvo[2][3], r1, r2;
-    if (!planet->parent) return false;
-    if (planet->id == MOON) return false;
-    planet_get_pvo(planet, painter->obs, pvo);
-    planet_get_pvo(planet->parent, painter->obs, parent_pvo);
-    if (vec3_norm2(pvo[0]) < vec3_norm2(parent_pvo[0])) return false;
-    sep = eraSepp(pvo[0], parent_pvo[0]);
-    r1 = planet->radius_m / DAU / vec3_norm(pvo[0]);
-    r2 = planet->parent->radius_m / DAU / vec3_norm(parent_pvo[0]);
-    return sep < r1 + r2;
+    double pvo[2][3], angular_diameter, scale;
+    const double MOON_ANGULAR_DIAMETER_FROM_EARTH = 0.55 * DD2R;
+
+    if (planet->id != MOON) return 1;
+    if (!planets->scale_moon) return 1;
+
+    // XXX: we should probably simplify this: just use a linear function
+    // of the size in pixel.
+    planet_get_pvo(planet, core->observer, pvo);
+    angular_diameter = 2.0 * planet->radius_m * DM2AU / vec3_norm(pvo[0]);
+    scale = core->fov / (20 * DD2R);
+    scale /= (angular_diameter / MOON_ANGULAR_DIAMETER_FROM_EARTH);
+    scale /= core->star_scale_screen_factor;
+
+    return max(1.0, scale);
 }
 
 static void planet_render(const planet_t *planet, const painter_t *painter_)
@@ -1014,6 +1062,7 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     double point_r;          // Size (rad) and luminance if the planet is seen
     double point_luminance;  // as a point source (like a star).
     double radius_m;
+    double dist;
     double r_scale = 1.0;    // Artificial size scale.
     double diam;                // Angular diameter (rad).
     double model_alpha = 0;
@@ -1024,20 +1073,18 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     bool selected = core->selection && &planet->obj == core->selection;
     double cap[4];
     bool has_model;
-    double pvo[2][3];
+    double pvo[2][3], dir[3];
+    double phy_angular_radius;
 
-    if (planet->id == EARTH) return;
+    if (!painter.obs->space && planet->id == EARTH) return;
 
     vmag = planet_get_vmag(planet, painter.obs);
     if (planet->id != MOON && vmag > painter.stars_limit_mag) return;
 
     // Artificially increase the moon size when we are zoomed out, so that
     // we can render it as a hips survey.
-    if (planet->id == MOON) {
-        model_k = 4.0;
-        r_scale = max(1.0, core->fov / (20.0 * core->star_scale_screen_factor
-                                        * DD2R));
-    }
+    r_scale = get_artificial_scale(planets, planet);
+    if (planet->id == MOON) model_k = 4.0;
 
     core_get_point_for_mag(vmag, &point_size, &point_luminance);
     point_r = core_get_apparent_angle_for_point(painter.proj, point_size * 2.0);
@@ -1048,21 +1095,24 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
 
     // Compute planet's pos and bounding cap in ICRF
     planet_get_pvo(planet, painter.obs, pvo);
-    vec3_copy(pvo[0], pos);
-    vec3_normalize(pos, pos);
-    vec3_copy(pos, cap);
-    cap[3] = cos(max(radius_m / DAU / vec3_norm(pvo[0]), point_r));
+    dist = vec3_norm(pvo[0]);
+    vec3_normalize(pvo[0], dir);
 
-    if (painter_is_cap_clipped(&painter, FRAME_ICRF, cap))
-        return;
+    // Return if the planet is clipped.
+    if (radius_m * DM2AU < dist) {
+        phy_angular_radius = asin(radius_m * DM2AU / dist);
+        vec3_copy(dir, cap);
+        cap[3] = cos(max(phy_angular_radius, point_r));
+        if (painter_is_cap_clipped(&painter, FRAME_ICRF, cap))
+            return;
+    }
 
     // Planet apparent diameter in rad
-    diam = 2.0 * planet->radius_m / DAU / vec3_norm(pvo[0]);
+    diam = 2.0 * planet->radius_m * DM2AU / dist;
 
     // Project planet's center
-    convert_frame(painter.obs, FRAME_ICRF, FRAME_VIEW, true, pos, pos);
-    project(painter.proj, PROJ_ALREADY_NORMALIZED | PROJ_TO_WINDOW_SPACE,
-            pos, p_win);
+    convert_frame(painter.obs, FRAME_ICRF, FRAME_VIEW, true, dir, pos);
+    project_to_win(painter.proj, pos, p_win);
 
     // At least 1 px of the planet is visible, report it for tonemapping
     convert_frame(painter.obs, FRAME_VIEW, FRAME_OBSERVED, true, pos, pos);
@@ -1107,8 +1157,7 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     paint_2d_points(&painter, 1, &point);
 
     if (model_alpha > 0) {
-        planet_render_model(planet, planet->radius_m / DAU, r_scale,
-                            model_alpha, &painter);
+        planet_render_model(planet, r_scale, model_alpha, &painter);
     }
 
     // Note: I force rendering the label if the model is visible for the
@@ -1118,8 +1167,7 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     // XXX: cleanup this line.
     if (selected || (planets->hints_visible && (
         vmag <= painter.hints_limit_mag + 2.4 + planets->hints_mag_offset ||
-        model_alpha > 0)
-        && !planet_is_occulted(planet, &painter)))
+        model_alpha > 0)))
     {
         planet_render_label(planet, &painter, vmag, r_scale, point_size);
     }
@@ -1146,42 +1194,22 @@ static int sort_cmp(const obj_t *a, const obj_t *b)
     return cmp(eraPm(bpvo[0]), eraPm(apvo[0]));
 }
 
-static double planet_get_pixel_radius(const planet_t *p,
-                                      const painter_t *painter)
-{
-    double vmag, angle, pvo[2][3], radius_physical, radius_vmag;
-
-    planet_get_pvo(p, painter->obs, pvo);
-    angle = p->radius_m / DAU / vec3_norm(pvo[0]);
-    radius_physical = core_get_point_for_apparent_angle(painter->proj, angle);
-    vmag = planet_get_vmag(p, painter->obs);
-    core_get_point_for_mag(vmag, &radius_vmag, NULL);
-    return max(radius_physical, radius_vmag);
-}
 
 /*
 * Heuristic to decide if we should render the orbit of a planet.
 */
 static bool should_render_orbit(const planet_t *p, const painter_t *painter)
 {
-
-    // Only consider planets moons.
-    if (!core->selection) return false;
-    if (!p->parent) return false;
-    if (p->id == SUN) return false;
-    if (p->parent->id == SUN) return false;
-
-    // If the moon is selected, always render the orbit.
-    if (&p->obj == core->selection) return true;
-
-    // If the parent is not selected, don't render.
-    if (&p->parent->obj != core->selection) return false;
-
-    // Only render the orbit if the visible radius on screen is larger than
-    // a threshold value.
-    if (planet_get_pixel_radius(p, painter) < 1.5) return false;
-
-    return true;
+    switch (g_planets->orbits_mode) {
+    case 0:
+        return false;
+    case 1:
+        if (!core->selection) return false;
+        if (&p->parent->obj != core->selection) return false;
+        return true;
+    default:
+        return false;
+    }
 }
 
 static int planets_render(const obj_t *obj, const painter_t *painter)
@@ -1201,12 +1229,12 @@ static int planets_render(const obj_t *obj, const painter_t *painter)
 
     // Render orbits after the planets for proper depth buffer.
     // Note: the renderer could sort it itself?
-    // Still disabled by default for the moment.
-    if ((0)) // Disabled for the moment
-    PLANETS_ITER(planets, p) {
-        p->orbit_visible.target = should_render_orbit(p, painter);
-        if (p->orbit_visible.value)
-            planet_render_orbit(p, 0.6 * p->orbit_visible.value, painter);
+    if (planets->orbits_mode) {
+        PLANETS_ITER(planets, p) {
+            p->orbit_visible.target = should_render_orbit(p, painter);
+            if (p->orbit_visible.value)
+                planet_render_orbit(p, 0.6 * p->orbit_visible.value, painter);
+        }
     }
     return 0;
 }
@@ -1250,7 +1278,7 @@ static int parse_orbit(planet_t *p, const char *v)
     p->orbit.in = in * DD2R;
     p->orbit.om = om * DD2R;
     p->orbit.w = w * DD2R;
-    p->orbit.a = a * (1000.0 / DAU);
+    p->orbit.a = a * (1000.0 * DM2AU);
     p->orbit.n = n * DD2R * 60 * 60 * 24;
     p->orbit.ec = ec;
     p->orbit.ma = ma * DD2R;
@@ -1376,6 +1404,7 @@ static int planets_init(obj_t *obj, json_value *args)
     g_planets = planets;
     fader_init(&planets->visible, true);
     planets->hints_visible = true;
+    planets->scale_moon = true;
 
     data = asset_get_data("asset://planets.ini", NULL, NULL);
     ini_parse_string(data, planets_ini_handler, planets);
@@ -1493,6 +1522,8 @@ static obj_klass_t planets_klass = {
         PROPERTY(hints_mag_offset, TYPE_FLOAT,
                  MEMBER(planets_t, hints_mag_offset)),
         PROPERTY(hints_visible, TYPE_BOOL, MEMBER(planets_t, hints_visible)),
+        PROPERTY(scale_moon, TYPE_BOOL, MEMBER(planets_t, scale_moon)),
+        PROPERTY(orbits_mode, TYPE_ENUM, MEMBER(planets_t, orbits_mode)),
         {}
     },
 };

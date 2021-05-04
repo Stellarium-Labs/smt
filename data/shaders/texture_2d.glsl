@@ -1,4 +1,4 @@
-/* Stellarium Web Engine - Copyright (c) 2018 - Noctua Software Ltd
+/* Stellarium Web Engine - Copyright (c) 2021 - Noctua Software Ltd
  *
  * This program is licensed under the terms of the GNU AGPL v3, or
  * alternatively under a commercial licence.
@@ -9,25 +9,29 @@
 
 uniform mediump vec4        u_color;
 uniform mediump sampler2D   u_tex;
+uniform lowp    vec2        u_win_size;
 
 varying highp   vec2        v_tex_pos;
 
 #ifdef VERTEX_SHADER
 
-#ifdef PROJ
-#includes "projections.glsl"
+#ifdef HAS_VIEW_POS
+    attribute highp vec3 a_pos;
+    #includes "projections.glsl"
 #endif
 
-attribute highp     vec3    a_pos;
+attribute highp     vec2    a_wpos;
 attribute mediump   vec2    a_tex_pos;
 
 void main()
 {
-#ifdef PROJ
-    gl_Position = proj(a_pos);
-#else
-    gl_Position = vec4(a_pos, 1.0);
-#endif
+    #ifdef HAS_VIEW_POS
+        gl_Position = proj(a_pos);
+    #else
+        gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
+    #endif
+    gl_Position.xy = (a_wpos / u_win_size - 0.5) * vec2(2.0, -2.0);
+    gl_Position.xy *= gl_Position.w;
     v_tex_pos = a_tex_pos;
 }
 

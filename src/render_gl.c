@@ -7,6 +7,7 @@
  * repository.
  */
 
+#include "render.h"
 #include "swe.h"
 
 #include "line_mesh.h"
@@ -46,6 +47,7 @@ enum {
     ATTR_SKY_POS,
     ATTR_LUMINANCE,
     ATTR_SIZE,
+    ATTR_WPOS,
 };
 
 static const char *ATTR_NAMES[] = {
@@ -58,6 +60,7 @@ static const char *ATTR_NAMES[] = {
     [ATTR_SKY_POS]      = "a_sky_pos",
     [ATTR_LUMINANCE]    = "a_luminance",
     [ATTR_SIZE]         = "a_size",
+    [ATTR_WPOS]         = "a_wpos",
     NULL,
 };
 
@@ -81,6 +84,7 @@ enum {
     ITEM_MESH,
     ITEM_POINTS,
     ITEM_TEXTURE,
+    ITEM_TEXTURE_2D,
     ITEM_ATMOSPHERE,
     ITEM_FOG,
     ITEM_PLANET,
@@ -88,7 +92,6 @@ enum {
     ITEM_VG_RECT,
     ITEM_VG_LINE,
     ITEM_TEXT,
-    ITEM_QUAD_WIREFRAME,
     ITEM_GLTF,
 };
 
@@ -102,7 +105,6 @@ struct item
     gl_buf_t    indices;
     texture_t   *tex;
     int         flags;
-    float       depth_range[2];
 
     union {
         struct {
@@ -130,6 +132,7 @@ struct item
             int   material;
             float tex_transf[9];
             float normal_tex_transf[9];
+            float min_brightness;
         } planet;
 
         struct {
@@ -185,18 +188,19 @@ static const gl_buf_info_t INDICES_BUF = {
 };
 
 static const gl_buf_info_t MESH_BUF = {
-    .size = 20,
+    .size = 16,
     .attrs = {
-        [ATTR_POS]      = {GL_FLOAT, 4, false, 0},
-        [ATTR_COLOR]    = {GL_UNSIGNED_BYTE, 4, true, 16},
+        [ATTR_POS]      = {GL_FLOAT, 3, false, 0},
+        [ATTR_COLOR]    = {GL_UNSIGNED_BYTE, 4, true, 12},
     },
 };
 
 static const gl_buf_info_t LINES_BUF = {
-    .size = 20,
+    .size = 28,
     .attrs = {
         [ATTR_POS]      = {GL_FLOAT, 3, false, 0},
-        [ATTR_TEX_POS]  = {GL_FLOAT, 2, false, 12},
+        [ATTR_WPOS]     = {GL_FLOAT, 2, false, 12},
+        [ATTR_TEX_POS]  = {GL_FLOAT, 2, false, 20},
     },
 };
 
@@ -210,45 +214,54 @@ static const gl_buf_info_t POINTS_BUF = {
 };
 
 static const gl_buf_info_t TEXTURE_BUF = {
-    .size = 24,
+    .size = 20,
     .attrs = {
-        [ATTR_POS]      = {GL_FLOAT, 4, false, 0},
-        [ATTR_TEX_POS]  = {GL_FLOAT, 2, false, 16},
+        [ATTR_POS]      = {GL_FLOAT, 3, false, 0},
+        [ATTR_TEX_POS]  = {GL_FLOAT, 2, false, 12},
+    },
+};
+
+static const gl_buf_info_t TEXTURE_2D_BUF = {
+    .size = 28,
+    .attrs = {
+        [ATTR_POS]      = {GL_FLOAT, 3, false, 0},
+        [ATTR_WPOS]     = {GL_FLOAT, 2, false, 12},
+        [ATTR_TEX_POS]  = {GL_FLOAT, 2, false, 20},
     },
 };
 
 static const gl_buf_info_t PLANET_BUF = {
-    .size = 68,
+    .size = 60,
     .attrs = {
-        [ATTR_POS]      = {GL_FLOAT, 4, false, 0},
-        [ATTR_MPOS]     = {GL_FLOAT, 4, false, 16},
-        [ATTR_TEX_POS]  = {GL_FLOAT, 2, false, 32},
-        [ATTR_COLOR]    = {GL_UNSIGNED_BYTE, 4, true, 40},
-        [ATTR_NORMAL]   = {GL_FLOAT, 3, false, 44},
-        [ATTR_TANGENT]  = {GL_FLOAT, 3, false, 56},
+        [ATTR_POS]      = {GL_FLOAT, 3, false, 0},
+        [ATTR_MPOS]     = {GL_FLOAT, 3, false, 12},
+        [ATTR_TEX_POS]  = {GL_FLOAT, 2, false, 24},
+        [ATTR_COLOR]    = {GL_UNSIGNED_BYTE, 4, true, 32},
+        [ATTR_NORMAL]   = {GL_FLOAT, 3, false, 36},
+        [ATTR_TANGENT]  = {GL_FLOAT, 3, false, 48},
     },
 };
 
 static const gl_buf_info_t ATMOSPHERE_BUF = {
-    .size = 32,
+    .size = 28,
     .attrs = {
-        [ATTR_POS]       = {GL_FLOAT, 4, false, 0},
-        [ATTR_SKY_POS]   = {GL_FLOAT, 3, false, 16},
-        [ATTR_LUMINANCE] = {GL_FLOAT, 1, false, 28},
+        [ATTR_POS]       = {GL_FLOAT, 3, false, 0},
+        [ATTR_SKY_POS]   = {GL_FLOAT, 3, false, 12},
+        [ATTR_LUMINANCE] = {GL_FLOAT, 1, false, 24},
     },
 };
 
 static const gl_buf_info_t FOG_BUF = {
-    .size = 28,
+    .size = 24,
     .attrs = {
-        [ATTR_POS]       = {GL_FLOAT, 4, false, 0},
-        [ATTR_SKY_POS]   = {GL_FLOAT, 3, false, 16},
+        [ATTR_POS]       = {GL_FLOAT, 3, false, 0},
+        [ATTR_SKY_POS]   = {GL_FLOAT, 3, false, 12},
     },
 };
 
-typedef struct renderer_gl {
-    renderer_t  rend;
+struct renderer {
 
+    projection_t proj;
     int     fb_size[2];
     double  scale;
     bool    cull_flipped;
@@ -268,7 +281,7 @@ typedef struct renderer_gl {
     item_t  *items;
     cache_t *grid_cache;
 
-} renderer_gl_t;
+};
 
 // Weak linking, so that we can put the implementation in a module.
 __attribute__((weak))
@@ -296,26 +309,65 @@ static bool color_is_white(const float c[4])
     return c[0] == 1.0f && c[1] == 1.0f && c[2] == 1.0f && c[3] == 1.0f;
 }
 
-static void window_to_ndc(renderer_gl_t *rend,
+static void proj_set_depth_range(projection_t *proj,
+                                 double nearval, double farval)
+{
+    proj->mat[2][2] = (farval + nearval) / (nearval - farval);
+    proj->mat[3][2] = 2. * farval * nearval / (nearval - farval);
+}
+
+static double proj_get_depth(const projection_t *proj,
+                             const double p[3])
+{
+    if (proj->klass->id == PROJ_PERSPECTIVE) {
+        return -p[2];
+    } else {
+        return vec3_norm(p);
+    }
+}
+
+/*
+ * Return the current flush projection, with depth range sets to infinity
+ * if we did not enable the depth
+ */
+static projection_t rend_get_proj(const renderer_t *rend, int flags)
+{
+    const double eps = FLT_EPSILON;
+    const double nearval = 5 * DM2AU;
+    projection_t proj = rend->proj;
+    if (!(flags & PAINTER_ENABLE_DEPTH)) {
+        // Infinite zfar projection matrix.
+        // from 'Projection Matrix Tricks', by Eric Lengyel.
+        proj.mat[2][2] = eps - 1;
+        proj.mat[3][2] = (eps - 2) * nearval;
+    }
+    return proj;
+}
+
+static void window_to_ndc(renderer_t *rend,
                           const double win[2], double ndc[2])
 {
     ndc[0] = (win[0] * rend->scale / rend->fb_size[0]) * 2 - 1;
     ndc[1] = 1 - (win[1] * rend->scale / rend->fb_size[1]) * 2;
 }
 
-static void prepare(renderer_t *rend_, double win_w, double win_h,
+void render_prepare(renderer_t *rend, const projection_t *proj,
+                    double win_w, double win_h,
                     double scale, bool cull_flipped)
 {
-    renderer_gl_t *rend = (void*)rend_;
     tex_cache_t *ctex;
 
     rend->fb_size[0] = win_w * scale;
     rend->fb_size[1] = win_h * scale;
     rend->scale = scale;
     rend->cull_flipped = cull_flipped;
+    rend->proj = *proj;
 
     DL_FOREACH(rend->tex_cache, ctex)
         ctex->in_use = false;
+
+    rend->depth_range[0] = DBL_MAX;
+    rend->depth_range[1] = DBL_MIN;
 }
 
 /*
@@ -327,7 +379,7 @@ static void prepare(renderer_t *rend_, double win_w, double win_h,
  *   buf_size       - The free vertex buffer size requiered.
  *   indices_size   - The free indice size required.
  */
-static item_t *get_item(renderer_gl_t *rend, int type,
+static item_t *get_item(renderer_t *rend, int type,
                         int buf_size,
                         int indices_size,
                         texture_t *tex)
@@ -351,12 +403,9 @@ static item_t *get_item(renderer_gl_t *rend, int type,
     return NULL;
 }
 
-static void points_2d(renderer_t *rend_,
-                      const painter_t *painter,
-                      int n,
-                      const point_t *points)
+void render_points_2d(renderer_t *rend, const painter_t *painter,
+                      int n, const point_t *points)
 {
-    renderer_gl_t *rend = (void*)rend_;
     item_t *item;
     int i;
     const int MAX_POINTS = 4096;
@@ -402,7 +451,7 @@ static void points_2d(renderer_t *rend_,
  * Function: get_grid
  * Compute an uv_map grid, and cache it if possible.
  */
-static const double (*get_grid(renderer_gl_t *rend,
+static const double (*get_grid(renderer_t *rend,
                                const uv_map_t *map, int split,
                                bool *should_delete))[4]
 {
@@ -448,8 +497,8 @@ static void compute_tangent(const double uv[2], const uv_map_t *map,
     vec2_copy(uv, uv1);
     vec2_copy(uv, uv2);
     uv2[0] += delta;
-    project(tex_proj, PROJ_BACKWARD, 4, uv1, p1);
-    project(tex_proj, PROJ_BACKWARD, 4, uv2, p2);
+    unproject(tex_proj, uv1, p1);
+    unproject(tex_proj, uv2, p2);
     vec3_sub(p2, p1, tangent);
     vec3_normalize(tangent, out);
     */
@@ -460,22 +509,22 @@ static void compute_tangent(const double uv[2], const uv_map_t *map,
 }
 
 static void quad_planet(
-                 renderer_t          *rend_,
+                 renderer_t          *rend,
                  const painter_t     *painter,
                  int                 frame,
                  int                 grid_size,
                  const uv_map_t      *map)
 {
-    renderer_gl_t *rend = (void*)rend_;
     item_t *item;
     int n, i, j, k;
-    double p[4], mpos[4], normal[4] = {0}, tangent[4] = {0}, z, mv[4][4];
+    double p[4], mpos[4], normal[4] = {0}, tangent[4] = {0}, mv[4][4], depth;
 
     // Positions of the triangles in the quads.
     const int INDICES[6][2] = { {0, 0}, {0, 1}, {1, 0},
                                 {1, 1}, {1, 0}, {0, 1} };
     n = grid_size + 1;
 
+    assert(painter->flags & PAINTER_ENABLE_DEPTH);
     item = calloc(1, sizeof(*item));
     item->type = ITEM_PLANET;
     gl_buf_alloc(&item->buf, &PLANET_BUF, n * n * 4);
@@ -484,6 +533,7 @@ static void quad_planet(
     item->flags = painter->flags;
     item->planet.shadow_color_tex = painter->planet.shadow_color_tex;
     item->planet.contrast = painter->contrast;
+    item->planet.min_brightness = painter->planet.min_brightness;
     item->planet.shadow_spheres_nb = painter->planet.shadow_spheres_nb;
     for (i = 0; i < painter->planet.shadow_spheres_nb; i++) {
         vec4_to_float(painter->planet.shadow_spheres[i],
@@ -544,17 +594,16 @@ static void quad_planet(
         vec3_sub(mpos, (*map->transf)[3], mpos);
         vec3_mul(1.0 / painter->planet.scale, mpos, mpos);
         vec3_add(mpos, (*map->transf)[3], mpos);
-        gl_buf_4f(&item->buf, -1, ATTR_MPOS, VEC4_SPLIT(mpos));
+        gl_buf_3f(&item->buf, -1, ATTR_MPOS, VEC3_SPLIT(mpos));
 
         // Rendering position (with scaling applied).
         convert_framev4(painter->obs, frame, FRAME_VIEW, p, p);
-        z = p[2];
-        project(painter->proj, 0, p, p);
-        if (painter->depth_range) {
-            vec2_to_float(*painter->depth_range, item->depth_range);
-            p[2] = -z;
-        }
-        gl_buf_4f(&item->buf, -1, ATTR_POS, VEC4_SPLIT(p));
+
+        depth = proj_get_depth(painter->proj, p);
+        rend->depth_range[0] = min(rend->depth_range[0], depth);
+        rend->depth_range[1] = max(rend->depth_range[1], depth);
+
+        gl_buf_3f(&item->buf, -1, ATTR_POS, VEC3_SPLIT(p));
         gl_buf_4i(&item->buf, -1, ATTR_COLOR, 255, 255, 255, 255);
         gl_buf_next(&item->buf);
     }
@@ -570,13 +619,9 @@ static void quad_planet(
     DL_APPEND(rend->items, item);
 }
 
-static void quad(renderer_t          *rend_,
-                 const painter_t     *painter,
-                 int                 frame,
-                 int                 grid_size,
-                 const uv_map_t      *map)
+void render_quad(renderer_t *rend, const painter_t *painter,
+                 int frame, int grid_size, const uv_map_t *map)
 {
-    renderer_gl_t *rend = (void*)rend_;
     item_t *item;
     int n, i, j, k, ofs;
     const int INDICES[6][2] = {
@@ -589,7 +634,7 @@ static void quad(renderer_t          *rend_,
 
     // Special case for planet shader.
     if (painter->flags & (PAINTER_PLANET_SHADER | PAINTER_RING_SHADER))
-        return quad_planet(rend_, painter, frame, grid_size, map);
+        return quad_planet(rend, painter, frame, grid_size, map);
 
     if (!tex) tex = rend->white_tex;
     n = grid_size + 1;
@@ -641,8 +686,7 @@ static void quad(renderer_t          *rend_,
 
         vec4_set(p, VEC4_SPLIT(grid[i * n + j]));
         convert_framev4(painter->obs, frame, FRAME_VIEW, p, ndc_p);
-        project(painter->proj, 0, ndc_p, ndc_p);
-        gl_buf_4f(&item->buf, -1, ATTR_POS, VEC4_SPLIT(ndc_p));
+        gl_buf_3f(&item->buf, -1, ATTR_POS, VEC3_SPLIT(ndc_p));
         // For atmosphere shader, in the first pass we do not compute the
         // luminance yet, only if the point is visible.
         if (painter->flags & PAINTER_ATMOSPHERE_SHADER) {
@@ -670,75 +714,27 @@ static void quad(renderer_t          *rend_,
     DL_APPEND(rend->items, item);
 }
 
-static void quad_wireframe(renderer_t          *rend_,
-                           const painter_t     *painter,
-                           int                 frame,
-                           int                 grid_size,
-                           const uv_map_t      *map)
-{
-    renderer_gl_t *rend = (void*)rend_;
-    int n, i, j;
-    item_t *item;
-    n = grid_size + 1;
-    double p[4], ndc_p[4];
-    const double (*grid)[4] = NULL;
-    bool should_delete_grid;
-
-    item = calloc(1, sizeof(*item));
-    item->type = ITEM_QUAD_WIREFRAME;
-    gl_buf_alloc(&item->buf, &TEXTURE_BUF, n * n);
-    gl_buf_alloc(&item->indices, &INDICES_BUF, grid_size * n * 4);
-    vec4_to_float(VEC(1, 0, 0, 0.25), item->color);
-
-    // Generate grid position.
-    grid = get_grid(rend, map, grid_size, &should_delete_grid);
-    for (i = 0; i < n; i++)
-    for (j = 0; j < n; j++) {
-        gl_buf_2f(&item->buf, -1, ATTR_TEX_POS, 0.5, 0.5);
-        vec4_set(p, VEC4_SPLIT(grid[i * n + j]));
-        convert_framev4(painter->obs, frame, FRAME_VIEW, p, ndc_p);
-        project(painter->proj, 0, ndc_p, ndc_p);
-        gl_buf_4f(&item->buf, -1, ATTR_POS, VEC4_SPLIT(ndc_p));
-        gl_buf_next(&item->buf);
-    }
-    if (should_delete_grid) free(grid);
-
-    /* Set the index buffer.
-     * We render a set of horizontal and vertical lines.  */
-    for (i = 0; i < n; i++)
-    for (j = 0; j < grid_size; j++) {
-        // Vertical.
-        gl_buf_1i(&item->indices, -1, 0, (j + 0) * n + i);
-        gl_buf_next(&item->indices);
-        gl_buf_1i(&item->indices, -1, 0, (j + 1) * n + i);
-        gl_buf_next(&item->indices);
-        // Horizontal.
-        gl_buf_1i(&item->indices, -1, 0, i * n + j + 0);
-        gl_buf_next(&item->indices);
-        gl_buf_1i(&item->indices, -1, 0, i * n + j + 1);
-        gl_buf_next(&item->indices);
-    }
-    DL_APPEND(rend->items, item);
-}
-
-static void texture2(renderer_gl_t *rend, texture_t *tex,
-                     double uv[4][2], double pos[4][2],
-                     const double color_[4], int flags, bool swap_indices)
+static void texture_2d(renderer_t *rend, texture_t *tex,
+                       double uv[4][2], double win_pos[4][2],
+                       const double view_pos[3],
+                       const double color_[4], int flags)
 {
     int i, ofs;
     item_t *item;
     const int16_t INDICES[6] = {0, 1, 2, 3, 2, 1 };
+    double depth;
     float color[4];
 
+    assert((bool)view_pos == (bool)(flags & PAINTER_ENABLE_DEPTH));
     vec4_to_float(color_, color);
-    item = get_item(rend, ITEM_TEXTURE, 4, 6, tex);
+    item = get_item(rend, ITEM_TEXTURE_2D, 4, 6, tex);
     if (item && memcmp(item->color, color, sizeof(color))) item = NULL;
 
     if (!item) {
         item = calloc(1, sizeof(*item));
-        item->type = ITEM_TEXTURE;
+        item->type = ITEM_TEXTURE_2D;
         item->flags = flags;
-        gl_buf_alloc(&item->buf, &TEXTURE_BUF, 64 * 4);
+        gl_buf_alloc(&item->buf, &TEXTURE_2D_BUF, 64 * 4);
         gl_buf_alloc(&item->indices, &INDICES_BUF, 64 * 6);
         item->tex = tex;
         item->tex->ref++;
@@ -746,31 +742,30 @@ static void texture2(renderer_gl_t *rend, texture_t *tex,
         DL_APPEND(rend->items, item);
     }
 
-    ofs = item->buf.nb;
+    if (flags & PAINTER_ENABLE_DEPTH) {
+        depth = proj_get_depth(&rend->proj, view_pos);
+        rend->depth_range[0] = min(rend->depth_range[0], depth);
+        rend->depth_range[1] = max(rend->depth_range[1], depth);
+    }
 
+    ofs = item->buf.nb;
     for (i = 0; i < 4; i++) {
-        gl_buf_4f(&item->buf, -1, ATTR_POS, pos[i][0], pos[i][1], 0.0, 1.0);
+        gl_buf_2f(&item->buf, -1, ATTR_WPOS, win_pos[i][0], win_pos[i][1]);
+        if (view_pos)
+            gl_buf_3f(&item->buf, -1, ATTR_POS, VEC3_SPLIT(view_pos));
         gl_buf_2f(&item->buf, -1, ATTR_TEX_POS, uv[i][0], uv[i][1]);
         gl_buf_next(&item->buf);
     }
     for (i = 0; i < 6; i++) {
-        if (swap_indices)
-            gl_buf_1i(&item->indices, -1, 0, ofs + INDICES[5 - i]);
-        else
-            gl_buf_1i(&item->indices, -1, 0, ofs + INDICES[i]);
+        gl_buf_1i(&item->indices, -1, 0, ofs + INDICES[i]);
         gl_buf_next(&item->indices);
     }
 }
 
-static void texture(renderer_t *rend_,
-                    const texture_t *tex,
-                    double uv[4][2],
-                    const double pos[2],
-                    double size,
-                    const double color[4],
-                    double angle)
+void render_texture(renderer_t *rend, const texture_t  *tex,
+                    double uv[4][2], const double pos[2], double size,
+                    const double color[4], double angle)
 {
-    renderer_gl_t *rend = (void*)rend_;
     int i;
     double verts[4][2], w, h;
     w = size;
@@ -781,9 +776,8 @@ static void texture(renderer_t *rend_,
         if (angle != 0.0) vec2_rotate(-angle, verts[i], verts[i]);
         verts[i][0] = pos[0] + verts[i][0];
         verts[i][1] = pos[1] + verts[i][1];
-        window_to_ndc(rend, verts[i], verts[i]);
     }
-    texture2(rend, tex, uv, verts, color, 0, false);
+    texture_2d(rend, tex, uv, verts, NULL, color, 0);
 }
 
 static uint8_t img_get(const uint8_t *img, int w, int h, int x, int y)
@@ -840,9 +834,10 @@ static void text_shadow_effect(const uint8_t *src, uint8_t *dst,
 }
 
 // Render text using a system bakend generated texture.
-static void text_using_texture(renderer_gl_t *rend,
+static void text_using_texture(renderer_t *rend,
                                const painter_t *painter,
-                               const char *text, const double pos[2],
+                               const char *text, const double win_pos[2],
+                               const double view_pos[3],
                                int align, int effects, double size,
                                const double color[4], double angle,
                                double out_bounds[4])
@@ -892,8 +887,8 @@ static void text_using_texture(renderer_gl_t *rend,
     if (align & ALIGN_RIGHT)    ofs[0] = -s[0] / 2;
     if (align & ALIGN_TOP)      ofs[1] = +s[1] / 2;
     if (align & ALIGN_BOTTOM)   ofs[1] = -s[1] / 2;
-    bounds[0] = pos[0] - s[0] / 2 + ofs[0] + ctex->xoff / scale;
-    bounds[1] = pos[1] - s[1] / 2 + ofs[1] + ctex->yoff / scale;
+    bounds[0] = win_pos[0] - s[0] / 2 + ofs[0] + ctex->xoff / scale;
+    bounds[1] = win_pos[1] - s[1] / 2 + ofs[1] + ctex->yoff / scale;
 
     // Round the position to the nearest pixel.  We add a small delta to
     // fix a bug when we are exactly in between two pixels, which can happen
@@ -926,17 +921,14 @@ static void text_using_texture(renderer_gl_t *rend,
         verts[i][1] -= ofs[1];
         verts[i][0] += (bounds[0] + bounds[2]) / 2;
         verts[i][1] += (bounds[1] + bounds[3]) / 2;
-        window_to_ndc(rend, verts[i], verts[i]);
     }
 
     flags = painter->flags;
-    if (effects & TEXT_BLEND_ADD) flags |= PAINTER_ADD;
-    texture2(rend, tex, uv, verts, VEC(1, 1, 1, color[3]), flags,
-             rend->cull_flipped);
+    texture_2d(rend, tex, uv, verts, view_pos, VEC(1, 1, 1, color[3]), flags);
 }
 
 // Render text using nanovg.
-static void text_using_nanovg(renderer_gl_t *rend,
+static void text_using_nanovg(renderer_t *rend,
                               const painter_t *painter,
                               const char *text,
                               const double pos[2], int align, int effects,
@@ -988,37 +980,38 @@ static void text_using_nanovg(renderer_gl_t *rend,
     }
 }
 
-static void text(renderer_t *rend_, const painter_t *painter,
-                 const char *text, const double pos[2],
-                 int align, int effects, double size, const double color[4],
-                 double angle, double bounds[4])
+void render_text(renderer_t *rend, const painter_t *painter,
+                 const char *text, const double win_pos[2],
+                 const double view_pos[3],
+                 int align, int effects, double size,
+                 const double color[4], double angle,
+                 double bounds[4])
 {
-    assert(pos);
-    renderer_gl_t *rend = (void*)rend_;
+    assert(win_pos);
     assert(size);
 
     // Prevent overflow in nvg.
-    if (fabs(pos[0]) > 100000 || fabs(pos[1]) > 100000) {
+    if (fabs(win_pos[0]) > 100000 || fabs(win_pos[1]) > 100000) {
         LOG_W_ONCE("Render text far outside screen: %s, %f %f",
-                   text, pos[0], pos[1]);
+                   text, win_pos[0], win_pos[1]);
         if (bounds) {
-            bounds[0] = pos[0];
-            bounds[1] = pos[1];
+            bounds[0] = win_pos[0];
+            bounds[1] = win_pos[1];
         }
         return;
     }
 
     if (sys_callbacks.render_text) {
-        text_using_texture(rend, painter, text, pos, align, effects, size,
-                           color, angle, bounds);
+        text_using_texture(rend, painter, text, win_pos, view_pos, align,
+                           effects, size, color, angle, bounds);
     } else {
-        text_using_nanovg(rend, painter, text, pos, align, effects, size,
+        text_using_nanovg(rend, painter, text, win_pos, align, effects, size,
                           color, angle, bounds);
     }
 
 }
 
-static void item_points_render(renderer_gl_t *rend, const item_t *item)
+static void item_points_render(renderer_t *rend, const item_t *item)
 {
     gl_shader_t *shader;
     GLuint  array_buffer;
@@ -1077,20 +1070,22 @@ static void draw_buffer(const gl_buf_t *buf, const gl_buf_t *indices,
     GL(glDeleteBuffers(1, &index_buffer));
 }
 
-static void item_mesh_render(renderer_gl_t *rend, const item_t *item)
+static void item_mesh_render(renderer_t *rend, const item_t *item)
 {
     // XXX: almost the same as item_lines_render.
     gl_shader_t *shader;
     int gl_mode;
+    float matf[16];
     float fbo_size[2] = {rend->fb_size[0] / rend->scale,
                          rend->fb_size[1] / rend->scale};
+    projection_t proj;
 
     gl_mode = item->mesh.mode == 0 ? GL_TRIANGLES :
               item->mesh.mode == 1 ? GL_LINES :
               item->mesh.mode == 2 ? GL_POINTS : 0;
 
     shader_define_t defines[] = {
-        {"PROJ_MOLLWEIDE", item->mesh.proj == PROJ_MOLLWEIDE},
+        {"PROJ", rend->proj.klass->id},
         {}
     };
     shader = shader_get("mesh", defines, ATTR_NAMES, init_shader);
@@ -1119,6 +1114,10 @@ static void item_mesh_render(renderer_gl_t *rend, const item_t *item)
     gl_update_uniform(shader, "u_fbo_size", fbo_size);
     gl_update_uniform(shader, "u_proj_scaling", item->mesh.proj_scaling);
 
+    proj = rend_get_proj(rend, item->flags);
+    mat4_to_float(proj.mat, matf);
+    gl_update_uniform(shader, "u_proj_mat", matf);
+
     draw_buffer(&item->buf, &item->indices, gl_mode);
 
     if (item->mesh.use_stencil) {
@@ -1128,18 +1127,19 @@ static void item_mesh_render(renderer_gl_t *rend, const item_t *item)
 }
 
 // XXX: almost the same as item_mesh_render!
-static void item_lines_render(renderer_gl_t *rend, const item_t *item)
+static void item_lines_render(renderer_t *rend, const item_t *item)
 {
     gl_shader_t *shader;
     float win_size[2] = {rend->fb_size[0] / rend->scale,
                          rend->fb_size[1] / rend->scale};
+    float matf[16];
     const float depth_range[] = {rend->depth_range[0], rend->depth_range[1]};
-    bool use_depth = item->depth_range[0] || item->depth_range[1];
+    projection_t proj;
 
     shader_define_t defines[] = {
         {"DASH", item->lines.dash_length && (item->lines.dash_ratio < 1.0)},
-        {"USE_DEPTH", use_depth},
-        {"FADE", item->lines.fade_dist_min},
+        {"FADE", item->lines.fade_dist_min ? 1 : 0},
+        {"PROJ", rend->proj.klass->id},
         {}
     };
     shader = shader_get("lines", defines, ATTR_NAMES, init_shader);
@@ -1148,7 +1148,7 @@ static void item_lines_render(renderer_gl_t *rend, const item_t *item)
     GL(glEnable(GL_BLEND));
     GL(glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                            GL_ZERO, GL_ONE));
-    if (use_depth)
+    if (item->flags & PAINTER_ENABLE_DEPTH)
         GL(glEnable(GL_DEPTH_TEST));
 
     gl_update_uniform(shader, "u_line_width", item->lines.width);
@@ -1165,11 +1165,15 @@ static void item_lines_render(renderer_gl_t *rend, const item_t *item)
         gl_update_uniform(shader, "u_fade_dist_max", item->lines.fade_dist_max);
     }
 
+    proj = rend_get_proj(rend, item->flags);
+    mat4_to_float(proj.mat, matf);
+    gl_update_uniform(shader, "u_proj_mat", matf);
+
     draw_buffer(&item->buf, &item->indices, GL_TRIANGLES);
     GL(glDisable(GL_DEPTH_TEST));
 }
 
-static void item_vg_render(renderer_gl_t *rend, const item_t *item)
+static void item_vg_render(renderer_t *rend, const item_t *item)
 {
     double a, da;
     nvgBeginFrame(rend->vg, rend->fb_size[0] / rend->scale,
@@ -1215,14 +1219,12 @@ static void item_vg_render(renderer_gl_t *rend, const item_t *item)
     GL(glColorMask(true, true, true, false));
 }
 
-static void item_text_render(renderer_gl_t *rend, const item_t *item)
+static void item_text_render(renderer_t *rend, const item_t *item)
 {
     int font = (item->text.effects & TEXT_BOLD) ? FONT_BOLD : FONT_REGULAR;
     nvgBeginFrame(rend->vg, rend->fb_size[0] / rend->scale,
                             rend->fb_size[1] / rend->scale, rend->scale);
     nvgSave(rend->vg);
-    if (item->text.effects & TEXT_BLEND_ADD)
-        nvgGlobalCompositeBlendFunc(rend->vg, NVG_ONE, NVG_ONE);
     nvgTranslate(rend->vg, item->text.pos[0], item->text.pos[1]);
     nvgRotate(rend->vg, item->text.angle);
 
@@ -1260,10 +1262,17 @@ static void item_text_render(renderer_gl_t *rend, const item_t *item)
     nvgEndFrame(rend->vg);
 }
 
-static void item_fog_render(renderer_gl_t *rend, const item_t *item)
+static void item_fog_render(renderer_t *rend, const item_t *item)
 {
     gl_shader_t *shader;
-    shader = shader_get("fog", NULL, ATTR_NAMES, init_shader);
+    float matf[16];
+    projection_t proj;
+
+    shader_define_t defines[] = {
+        {"PROJ", rend->proj.klass->id},
+        {}
+    };
+    shader = shader_get("fog", defines, ATTR_NAMES, init_shader);
     GL(glUseProgram(shader->prog));
     GL(glEnable(GL_CULL_FACE));
     GL(glCullFace(rend->cull_flipped ? GL_FRONT : GL_BACK));
@@ -1271,16 +1280,27 @@ static void item_fog_render(renderer_gl_t *rend, const item_t *item)
     GL(glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                            GL_ZERO, GL_ONE));
     GL(glDisable(GL_DEPTH_TEST));
+
+    proj = rend_get_proj(rend, item->flags);
+    mat4_to_float(proj.mat, matf);
+    gl_update_uniform(shader, "u_proj_mat", matf);
+
     draw_buffer(&item->buf, &item->indices, GL_TRIANGLES);
     GL(glCullFace(GL_BACK));
 }
 
-static void item_atmosphere_render(renderer_gl_t *rend, const item_t *item)
+static void item_atmosphere_render(renderer_t *rend, const item_t *item)
 {
     gl_shader_t *shader;
     float tm[3];
+    float matf[16];
+    projection_t proj;
 
-    shader = shader_get("atmosphere", NULL, ATTR_NAMES, init_shader);
+    shader_define_t defines[] = {
+        {"PROJ", rend->proj.klass->id},
+        {}
+    };
+    shader = shader_get("atmosphere", defines, ATTR_NAMES, init_shader);
     GL(glUseProgram(shader->prog));
 
     GL(glActiveTexture(GL_TEXTURE0));
@@ -1307,17 +1327,25 @@ static void item_atmosphere_render(renderer_gl_t *rend, const item_t *item)
     tm[1] = core->tonemapper.lwmax;
     tm[2] = core->tonemapper.exposure;
     gl_update_uniform(shader, "u_tm", tm);
+
+    proj = rend_get_proj(rend, item->flags);
+    mat4_to_float(proj.mat, matf);
+    gl_update_uniform(shader, "u_proj_mat", matf);
+
     draw_buffer(&item->buf, &item->indices, GL_TRIANGLES);
     GL(glCullFace(GL_BACK));
 }
 
-static void item_texture_render(renderer_gl_t *rend, const item_t *item)
+static void item_texture_render(renderer_t *rend, const item_t *item)
 {
     gl_shader_t *shader;
+    float matf[16];
+    projection_t proj;
 
     shader_define_t defines[] = {
         {"TEXTURE_LUMINANCE", item->tex->format == GL_LUMINANCE &&
                               !(item->flags & PAINTER_ADD)},
+        {"PROJ", item->type == ITEM_TEXTURE ? rend->proj.klass->id : 0},
         {}
     };
     shader = shader_get("blit", defines, ATTR_NAMES, init_shader);
@@ -1352,35 +1380,57 @@ static void item_texture_render(renderer_gl_t *rend, const item_t *item)
     }
 
     gl_update_uniform(shader, "u_color", item->color);
+    proj = rend_get_proj(rend, item->flags);
+    mat4_to_float(proj.mat, matf);
+    gl_update_uniform(shader, "u_proj_mat", matf);
+
     draw_buffer(&item->buf, &item->indices, GL_TRIANGLES);
     GL(glCullFace(GL_BACK));
 }
 
-static void item_quad_wireframe_render(renderer_gl_t *rend, const item_t *item)
+static void item_texture_2d_render(renderer_t *rend, const item_t *item)
 {
     gl_shader_t *shader;
-
-    shader = shader_get("blit", NULL, ATTR_NAMES, init_shader);
+    float matf[16];
+    projection_t proj;
+    float win_size[2] = {rend->fb_size[0] / rend->scale,
+                         rend->fb_size[1] / rend->scale};
+    shader_define_t defines[] = {
+        {"TEXTURE_LUMINANCE", item->tex->format == GL_LUMINANCE &&
+                              !(item->flags & PAINTER_ADD)},
+        {"HAS_VIEW_POS", (bool)(item->flags & PAINTER_ENABLE_DEPTH)},
+        {"PROJ", rend->proj.klass->id},
+        {}
+    };
+    shader = shader_get("texture_2d", defines, ATTR_NAMES, init_shader);
     GL(glUseProgram(shader->prog));
-
-    gl_update_uniform(shader, "u_color", item->color);
     GL(glActiveTexture(GL_TEXTURE0));
-    GL(glBindTexture(GL_TEXTURE_2D, rend->white_tex->id));
+    GL(glBindTexture(GL_TEXTURE_2D, item->tex->id));
+    if (item->tex->format == GL_RGB && item->color[3] == 1.0) {
+        GL(glDisable(GL_BLEND));
+    } else {
+        GL(glEnable(GL_BLEND));
+        GL(glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                               GL_ZERO, GL_ONE));
+    }
+    if (item->flags & PAINTER_ENABLE_DEPTH)
+        GL(glEnable(GL_DEPTH_TEST));
+    gl_update_uniform(shader, "u_color", item->color);
+    gl_update_uniform(shader, "u_win_size", win_size);
+    proj = rend_get_proj(rend, item->flags);
+    mat4_to_float(proj.mat, matf);
+    gl_update_uniform(shader, "u_proj_mat", matf);
+    draw_buffer(&item->buf, &item->indices, GL_TRIANGLES);
     GL(glDisable(GL_DEPTH_TEST));
-    GL(glEnable(GL_BLEND));
-    GL(glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                           GL_ZERO, GL_ONE));
-
-    draw_buffer(&item->buf, &item->indices, GL_LINES);
 }
 
-static void item_planet_render(renderer_gl_t *rend, const item_t *item)
+static void item_planet_render(renderer_t *rend, const item_t *item)
 {
     gl_shader_t *shader;
     bool is_moon;
-    const float depth_range[] = {rend->depth_range[0], rend->depth_range[1]};
     shader_define_t defines[] = {
         {"HAS_SHADOW", item->planet.shadow_spheres_nb > 0},
+        {"PROJ", rend->proj.klass->id},
         {}
     };
     shader = shader_get("planet", defines, ATTR_NAMES, init_shader);
@@ -1420,10 +1470,8 @@ static void item_planet_render(renderer_gl_t *rend, const item_t *item)
         GL(glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                                GL_ZERO, GL_ONE));
     }
-    if (item->depth_range[0] || item->depth_range[1]) {
-        GL(glEnable(GL_DEPTH_TEST));
-        GL(glDepthMask(GL_TRUE));
-    }
+    GL(glEnable(GL_DEPTH_TEST));
+    GL(glDepthMask(GL_TRUE));
 
     // Set all uniforms.
     is_moon = item->flags & PAINTER_IS_MOON;
@@ -1431,6 +1479,7 @@ static void item_planet_render(renderer_gl_t *rend, const item_t *item)
     gl_update_uniform(shader, "u_contrast", item->planet.contrast);
     gl_update_uniform(shader, "u_sun", item->planet.sun);
     gl_update_uniform(shader, "u_light_emit", item->planet.light_emit);
+    gl_update_uniform(shader, "u_min_brightness", item->planet.min_brightness);
     gl_update_uniform(shader, "u_material", item->planet.material);
     gl_update_uniform(shader, "u_is_moon", is_moon ? 1 : 0);
     gl_update_uniform(shader, "u_mv", item->planet.mv);
@@ -1440,7 +1489,10 @@ static void item_planet_render(renderer_gl_t *rend, const item_t *item)
     gl_update_uniform(shader, "u_tex_transf", item->planet.tex_transf);
     gl_update_uniform(shader, "u_normal_tex_transf",
                       item->planet.normal_tex_transf);
-    gl_update_uniform(shader, "u_depth_range", depth_range);
+
+    float matf[16];
+    mat4_to_float(rend->proj.mat, matf);
+    gl_update_uniform(shader, "u_proj_mat", matf);
 
     draw_buffer(&item->buf, &item->indices, GL_TRIANGLES);
     GL(glCullFace(GL_BACK));
@@ -1448,15 +1500,15 @@ static void item_planet_render(renderer_gl_t *rend, const item_t *item)
     GL(glDisable(GL_DEPTH_TEST));
 }
 
-static void item_gltf_render(renderer_gl_t *rend, const item_t *item)
+static void item_gltf_render(renderer_t *rend, const item_t *item)
 {
     double proj[4][4], nearval, farval;
     mat4_copy(item->gltf.proj_mat, proj);
 
-    if (item->depth_range[0]) {
-        // Fix the depth range of the projection to the current frame values.
-        nearval = rend->depth_range[0] * DAU;
-        farval = rend->depth_range[1] * DAU;
+    // Fix the depth range of the projection to the current frame values.
+    if (item->flags & PAINTER_ENABLE_DEPTH) {
+        nearval = rend->depth_range[0] * DAU2M;
+        farval = rend->depth_range[1] * DAU2M;
         proj[2][2] = (farval + nearval) / (nearval - farval);
         proj[3][2] = 2. * farval * nearval / (nearval - farval);
     }
@@ -1465,25 +1517,21 @@ static void item_gltf_render(renderer_gl_t *rend, const item_t *item)
                 proj, item->gltf.light_dir, item->gltf.args);
 }
 
-static void rend_flush(renderer_gl_t *rend)
+static void rend_flush(renderer_t *rend)
 {
     item_t *item, *tmp;
 
     // Compute depth range.
-    rend->depth_range[0] = DBL_MAX;
-    rend->depth_range[1] = DBL_MIN;
-    DL_FOREACH(rend->items, item) {
-        if (item->depth_range[0] || item->depth_range[1]) {
-            rend->depth_range[0] = min(rend->depth_range[0],
-                                       item->depth_range[0]);
-            rend->depth_range[1] = max(rend->depth_range[1],
-                                       item->depth_range[1]);
-        }
-    }
     if (rend->depth_range[0] == DBL_MAX) {
         rend->depth_range[0] = 0;
         rend->depth_range[1] = 1;
     }
+    rend->depth_range[0] = max(rend->depth_range[0], 10 * DM2AU);
+
+    // Add a small margin.
+    rend->depth_range[0] *= 0.99;
+    rend->depth_range[1] *= 1.01;
+    proj_set_depth_range(&rend->proj, VEC2_SPLIT(rend->depth_range));
 
     // Set default OpenGL state.
     // Make sure we clear everything.
@@ -1498,6 +1546,7 @@ static void rend_flush(renderer_gl_t *rend)
     GL(glViewport(0, 0, rend->fb_size[0], rend->fb_size[1]));
     GL(glDepthMask(GL_FALSE));
     GL(glDisable(GL_DEPTH_TEST));
+    GL(glDepthFunc(GL_LEQUAL));
     GL(glColorMask(true, true, true, false)); // Do not change the alpha.
 
     // On OpenGL Desktop, we have to enable point sprite support.
@@ -1520,6 +1569,9 @@ static void rend_flush(renderer_gl_t *rend)
         case ITEM_TEXTURE:
             item_texture_render(rend, item);
             break;
+        case ITEM_TEXTURE_2D:
+            item_texture_2d_render(rend, item);
+            break;
         case ITEM_ATMOSPHERE:
             item_atmosphere_render(rend, item);
             break;
@@ -1536,9 +1588,6 @@ static void rend_flush(renderer_gl_t *rend)
             break;
         case ITEM_TEXT:
             item_text_render(rend, item);
-            break;
-        case ITEM_QUAD_WIREFRAME:
-            item_quad_wireframe_render(rend, item);
             break;
         case ITEM_GLTF:
             item_gltf_render(rend, item);
@@ -1562,26 +1611,23 @@ static void rend_flush(renderer_gl_t *rend)
     GL(glColorMask(true, true, true, true));
 }
 
-static void finish(renderer_t *rend_)
+void render_finish(renderer_t *rend)
 {
-    renderer_gl_t *rend = (void*)rend_;
     rend_flush(rend);
 }
 
-static void line(renderer_t           *rend_,
-                 const painter_t      *painter,
-                 const double         (*line)[3],
-                 int                  size)
+void render_line(renderer_t *rend, const painter_t *painter,
+                 const double (*line)[3], const double (*win)[3], int size)
 {
-    renderer_gl_t *rend = (void*)rend_;
     line_mesh_t *mesh;
     int i, ofs;
     float color[4];
+    double depth;
     item_t *item;
 
     assert(painter->lines.glow); // Only glowing lines supported for now.
     vec4_to_float(painter->color, color);
-    mesh = line_to_mesh(line, size, 10);
+    mesh = line_to_mesh(line, win, size, 10);
 
     if (mesh->indices_count >= 1024 || mesh->verts_count >= 1024) {
         LOG_W("Too many points in lines! (size: %d)", size);
@@ -1598,11 +1644,14 @@ static void line(renderer_t           *rend_,
         item = NULL;
     if (item && item->lines.width != painter->lines.width)
         item = NULL;
+    if (item && item->flags != painter->flags)
+        item = NULL;
 
 
     if (!item) {
         item = calloc(1, sizeof(*item));
         item->type = ITEM_LINES;
+        item->flags = painter->flags;
         gl_buf_alloc(&item->buf, &LINES_BUF, 1024);
         gl_buf_alloc(&item->indices, &INDICES_BUF, 1024);
         item->lines.width = painter->lines.width;
@@ -1614,13 +1663,21 @@ static void line(renderer_t           *rend_,
         memcpy(item->color, color, sizeof(color));
         DL_APPEND(rend->items, item);
     }
-    if (painter->depth_range)
-        vec2_to_float(*painter->depth_range, item->depth_range);
+
+    if (item->flags & PAINTER_ENABLE_DEPTH) {
+        // Compute the depth range.
+        for (i = 0; i < size; i++) {
+            depth = proj_get_depth(painter->proj, line[i]);
+            rend->depth_range[0] = min(rend->depth_range[0], depth);
+            rend->depth_range[1] = max(rend->depth_range[1], depth);
+        }
+    }
 
     // Append the mesh to the buffer.
     ofs = item->buf.nb;
     for (i = 0; i < mesh->verts_count; i++) {
         gl_buf_3f(&item->buf, -1, ATTR_POS, VEC3_SPLIT(mesh->verts[i].pos));
+        gl_buf_2f(&item->buf, -1, ATTR_WPOS, VEC2_SPLIT(mesh->verts[i].win));
         gl_buf_2f(&item->buf, -1, ATTR_TEX_POS, VEC2_SPLIT(mesh->verts[i].uv));
         gl_buf_next(&item->buf);
     }
@@ -1633,22 +1690,15 @@ end:
     line_mesh_delete(mesh);
 }
 
-static void mesh(renderer_t          *rend_,
-                 const painter_t     *painter,
-                 int                 frame,
-                 int                 mode,
-                 int                 verts_count,
-                 const double        verts[][3],
-                 int                 indices_count,
-                 const uint16_t      indices[],
-                 bool                use_stencil)
+void render_mesh(renderer_t *rend, const painter_t *painter,
+                 int frame, int mode, int verts_count,
+                 const double verts[][3], int indices_count,
+                 const uint16_t indices[], bool use_stencil)
 {
     int i, ofs;
     double pos[4] = {};
-    double rot[3][3];
     uint8_t color[4];
     item_t *item;
-    renderer_gl_t *rend = (void*)rend_;
 
     color[0] = painter->color[0] * 255;
     color[1] = painter->color[1] * 255;
@@ -1673,33 +1723,15 @@ static void mesh(renderer_t          *rend_,
     }
 
     ofs = item->buf.nb;
-    // Project the vertices.
 
-    // Special cas for Mollweide projection when the frame convertion can
-    // be expressed as a single matrix rotation.
-    if ((painter->proj->klass->id == PROJ_MOLLWEIDE ||
-         painter->proj->klass->id == PROJ_MOLLWEIDE_ADAPTIVE) &&
-            frame_get_rotation(painter->obs, frame, FRAME_VIEW, rot)) {
-        item->mesh.proj = PROJ_MOLLWEIDE;
-        vec2_to_float(painter->proj->scaling, item->mesh.proj_scaling);
-        for (i = 0; i < verts_count; i++) {
-            mat3_mul_vec3(rot, verts[i], pos);
-            gl_buf_4f(&item->buf, -1, ATTR_POS, VEC4_SPLIT(pos));
-            gl_buf_4i(&item->buf, -1, ATTR_COLOR, VEC4_SPLIT(color));
-            gl_buf_next(&item->buf);
-        }
-    } else {
-        for (i = 0; i < verts_count; i++) {
-            vec3_copy(verts[i], pos);
-            pos[3] = 0.0;
-            vec3_normalize(pos, pos);
-            convert_frame(painter->obs, frame, FRAME_VIEW, true, pos, pos);
-            pos[3] = 0.0;
-            project(painter->proj, PROJ_ALREADY_NORMALIZED, pos, pos);
-            gl_buf_4f(&item->buf, -1, ATTR_POS, VEC4_SPLIT(pos));
-            gl_buf_4i(&item->buf, -1, ATTR_COLOR, VEC4_SPLIT(color));
-            gl_buf_next(&item->buf);
-        }
+    for (i = 0; i < verts_count; i++) {
+        vec3_copy(verts[i], pos);
+        pos[3] = 0.0;
+        vec3_normalize(pos, pos);
+        convert_frame(painter->obs, frame, FRAME_VIEW, true, pos, pos);
+        gl_buf_3f(&item->buf, -1, ATTR_POS, VEC3_SPLIT(pos));
+        gl_buf_4i(&item->buf, -1, ATTR_COLOR, VEC4_SPLIT(color));
+        gl_buf_next(&item->buf);
     }
 
     // Fill the indice buffer.
@@ -1709,11 +1741,10 @@ static void mesh(renderer_t          *rend_,
     }
 }
 
-static void ellipse_2d(renderer_t *rend_, const painter_t *painter,
+void render_ellipse_2d(renderer_t *rend, const painter_t *painter,
                        const double pos[2], const double size[2],
                        double angle, double dashes)
 {
-    renderer_gl_t *rend = (void*)rend_;
     item_t *item;
     item = calloc(1, sizeof(*item));
     item->type = ITEM_VG_ELLIPSE;
@@ -1726,10 +1757,10 @@ static void ellipse_2d(renderer_t *rend_, const painter_t *painter,
     DL_APPEND(rend->items, item);
 }
 
-static void rect_2d(renderer_t *rend_, const painter_t *painter,
-                    const double pos[2], const double size[2], double angle)
+void render_rect_2d(renderer_t *rend, const painter_t *painter,
+                    const double pos[2], const double size[2],
+                    double angle)
 {
-    renderer_gl_t *rend = (void*)rend_;
     item_t *item;
     item = calloc(1, sizeof(*item));
     item->type = ITEM_VG_RECT;
@@ -1741,10 +1772,9 @@ static void rect_2d(renderer_t *rend_, const painter_t *painter,
     DL_APPEND(rend->items, item);
 }
 
-static void line_2d(renderer_t *rend_, const painter_t *painter,
+void render_line_2d(renderer_t *rend, const painter_t *painter,
                     const double p1[2], const double p2[2])
 {
-    renderer_gl_t *rend = (void*)rend_;
     item_t *item;
     item = calloc(1, sizeof(*item));
     item->type = ITEM_VG_LINE;
@@ -1755,25 +1785,29 @@ static void line_2d(renderer_t *rend_, const painter_t *painter,
     DL_APPEND(rend->items, item);
 }
 
-static void model_3d(renderer_t *rend_, const painter_t *painter,
-                     const char *model,
-                     const double model_mat[4][4],
-                     const double view_mat[4][4],
-                     const double proj_mat[4][4],
-                     const double light_dir[3],
-                     json_value *args)
+void render_model_3d(renderer_t *rend, const painter_t *painter,
+                     const char *model, const double model_mat[4][4],
+                     const double view_mat[4][4], const double proj_mat[4][4],
+                     const double light_dir[3], json_value *args)
 {
-    renderer_gl_t *rend = (void*)rend_;
     item_t *item;
     item = calloc(1, sizeof(*item));
     item->type = ITEM_GLTF;
     item->gltf.model = model;
+    item->flags = painter->flags;
     mat4_copy(model_mat, item->gltf.model_mat);
     mat4_copy(view_mat, item->gltf.view_mat);
     mat4_copy(proj_mat, item->gltf.proj_mat);
     vec3_copy(light_dir, item->gltf.light_dir);
-    if (painter->depth_range)
-        vec2_to_float(*painter->depth_range, item->depth_range);
+
+    // XXX: use the model bounding box instead.
+    if (painter->depth_range) {
+        item->flags |= PAINTER_ENABLE_DEPTH;
+        rend->depth_range[0] =
+            min(rend->depth_range[0], (*painter->depth_range)[0]);
+        rend->depth_range[1] =
+            max(rend->depth_range[1], (*painter->depth_range)[1]);
+    }
     if (args) item->gltf.args = json_copy(args);
     DL_APPEND(rend->items, item);
 }
@@ -1790,7 +1824,7 @@ static texture_t *create_white_texture(int w, int h)
 }
 
 EMSCRIPTEN_KEEPALIVE
-void core_add_font(renderer_gl_t *rend, const char *name,
+void core_add_font(renderer_t *rend, const char *name,
                    const char *url, const uint8_t *data,
                    int size, float scale)
 {
@@ -1822,7 +1856,7 @@ void core_add_font(renderer_gl_t *rend, const char *name,
     }
 }
 
-static void set_default_fonts(renderer_gl_t *rend)
+static void set_default_fonts(renderer_t *rend)
 {
     const float scale = 1.38;
     core_add_font(rend, "regular", "asset://font/NotoSans-Regular.ttf",
@@ -1833,9 +1867,9 @@ static void set_default_fonts(renderer_gl_t *rend)
     rend->fonts[FONT_BOLD].is_default_font = true;
 }
 
-renderer_t* render_gl_create(void)
+renderer_t* render_create(void)
 {
-    renderer_gl_t *rend;
+    renderer_t *rend;
     GLint range[2];
 
 #ifdef WIN32
@@ -1858,19 +1892,5 @@ renderer_t* render_gl_create(void)
     if (range[1] < 32)
         LOG_W("OpenGL Doesn't support large point size!");
 
-    rend->rend.prepare = prepare;
-    rend->rend.finish = finish;
-    rend->rend.points_2d = points_2d;
-    rend->rend.quad = quad;
-    rend->rend.quad_wireframe = quad_wireframe;
-    rend->rend.texture = texture;
-    rend->rend.text = text;
-    rend->rend.line = line;
-    rend->rend.mesh = mesh;
-    rend->rend.ellipse_2d = ellipse_2d;
-    rend->rend.rect_2d = rect_2d;
-    rend->rend.line_2d = line_2d;
-    rend->rend.model_3d = model_3d;
-
-    return &rend->rend;
+    return rend;
 }

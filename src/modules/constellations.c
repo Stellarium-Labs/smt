@@ -439,7 +439,7 @@ static bool constellation_lines_in_view(const constellation_t *con,
         if (!con->stars[i]) continue;
         convert_frame(painter->obs, FRAME_ICRF, FRAME_VIEW, true,
                       con->stars_pos[i], pos[nb]);
-        project(painter->proj, 0, pos[nb], pos[nb]);
+        project_to_clip(painter->proj, pos[nb], pos[nb]);
         nb++;
     }
     if (nb == 0) {
@@ -488,7 +488,7 @@ static bool constellation_image_in_view(const constellation_t *con,
         mat3_mul_vec3(con->img.mat, pos[i], pos[i]);
         vec3_normalize(pos[i], pos[i]);
         convert_frame(obs, FRAME_ICRF, FRAME_VIEW, true, pos[i], pos[i]);
-        project(painter->proj, 0, pos[i], pos[i]);
+        project_to_clip(painter->proj, pos[i], pos[i]);
     }
 
     // Compute margins in NDC.
@@ -619,7 +619,8 @@ static bool constellation_is_pointed(const constellation_t *con,
         for (i = 0; i < 4; i++) {
             vec4_set(p, proj->window_size[0] / 2 + (i % 2 - 0.5) * d,
                         proj->window_size[1] / 2 + (i / 2 - 0.5) * d, 0, 0);
-            unproject(proj, PROJ_FROM_WINDOW_SPACE, p, p);
+            unproject(proj, p, p);
+            vec3_normalize(p, p);
             convert_frame(obs, FRAME_VIEW, FRAME_ICRF, true, p, p);
             find_constellation_at(p, cst[i]);
         }

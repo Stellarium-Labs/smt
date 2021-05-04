@@ -12,23 +12,22 @@
 
 /* Degrees to radians */
 #define DD2R (1.745329251994329576923691e-2)
+/* Radians to degrees */
+#define DR2D (57.29577951308232087679815)
+#define DAU (149597870.7e3)
+#define DM2AU  (1. / DAU)
 
-static void proj_perspective_project(
-        const projection_t *proj, int flags, const double *v, double *out)
+static bool proj_perspective_project(
+        const projection_t *proj, const double v[3], double out[3])
 {
-    double v4[4] = {v[0], v[1], v[2], 1};
-    mat4_mul_vec4((void*)proj->mat, v4, out);
+    vec3_copy(v, out);
+    return true;
 }
 
-static bool proj_perspective_backward(const projection_t *proj, int flags,
-        const double v[2], double out[4])
+static bool proj_perspective_backward(const projection_t *proj,
+        const double v[3], double out[3])
 {
-    double p[4] = {v[0], v[1], 0, 1};
-    double inv[4][4];
-    if (!mat4_invert(proj->mat, inv))
-        assert(false);
-    mat4_mul_vec4(inv, p, out);
-    vec3_normalize(out, out);
+    vec3_copy(v, out);
     return true;
 }
 
@@ -44,13 +43,10 @@ static void proj_perspective_compute_fov(int id, double fov, double aspect,
     }
 }
 
-void proj_perspective_init(projection_t *p, double fov, double aspect)
+void proj_perspective_init(projection_t *p, double fovy, double aspect)
 {
-    double fovy, clip_near = 0.1, clip_far = 256;
-    fovy = atan(tan(fov / 2) / aspect) * 2;
-    mat4_perspective(p->mat, fovy / DD2R, aspect, clip_near, clip_far);
-    p->scaling[0] = tan(fov / 2);
-    p->scaling[1] = p->scaling[0] / aspect;
+    const double clip_near = 5 * DM2AU;
+    mat4_inf_perspective(p->mat, fovy * DR2D, aspect, clip_near);
 }
 
 static const projection_klass_t proj_perspective_klass = {

@@ -32,21 +32,12 @@ enum {
     PROJ_MERCATOR,
     PROJ_HAMMER,
     PROJ_MOLLWEIDE,
-    // Same as Mollweide but auto set the vertical scale to remove the
-    // distortion as we zoom in.
-    PROJ_MOLLWEIDE_ADAPTIVE,
     PROJ_COUNT,
 };
 
 /* Enum: PROJ_FLAG
- * Modify the behavior of the <project> function.
  */
 enum {
-    PROJ_TO_WINDOW_SPACE    = 1 << 3,
-    PROJ_FROM_WINDOW_SPACE  = 1 << 3,
-
-    PROJ_ALREADY_NORMALIZED = 1 << 4,
-
     // Set in the projection flags to flip the rendering.
     PROJ_FLIP_VERTICAL      = 1 << 5,
     PROJ_FLIP_HORIZONTAL    = 1 << 6,
@@ -65,11 +56,10 @@ enum {
 struct projection
 {
     projection_klass_t *klass;
-    double scaling[2];
-    double fovx;
+    double fovy;
     int flags;
 
-    // Matrices used by some projections.
+    // Perspective projection part of the projection.
     double mat[4][4];
     // Window size (screen size / screen density).
     double window_size[2];
@@ -83,11 +73,16 @@ struct projection_klass
     double max_fov;
     // Maximum FOV that looks good for the UI.
     double max_ui_fov;
-    void (*init)(projection_t *proj, double fovx, double aspect);
-    void (*project)(const projection_t *proj, int flags,
-                    const double v[S 4], double out[S 4]);
-    bool (*backward)(const projection_t *proj, int flags,
-                     const double v[S 2], double out[4]);
+    void (*init)(projection_t *proj, double fovy, double aspect);
+
+    /*
+     * The project function projects into a vec3 that will then be multiplied
+     * by the projection 4x4 matrix to get the clipping space coordinates.
+     */
+    bool (*project)(const projection_t *proj,
+                    const double v[S 3], double out[S 3]);
+    bool (*backward)(const projection_t *proj,
+                     const double v[S 3], double out[S 3]);
     void (*compute_fovs)(int proj_type, double fov, double aspect,
                          double *fovx, double *fovy);
 };
@@ -121,30 +116,42 @@ void projection_compute_fovs(int proj_type, double fov, double aspect,
  *
  * Parameters:
  *   type   - One of the <PROJ_TYPE> value.
- *   fovx   - The fov in x direction (rad).
+ *   fovy   - The fov in Y direction (rad).
  *   win_w  - Window size in X (not framebuffer size).
  *   win_h  - Window size in Y (not framebuffer size).
  */
-void projection_init(projection_t *proj, int type, double fovx,
+void projection_init(projection_t *proj, int type, double fovy,
                      double win_w, double win_h);
 
-/* Function: project
- * Apply a projection to coordinates
+/*
+ * Function: project_to_win
+ * Project from view coordinates to windows coordinates.
  *
- * If we project forward (without the PROJ_BACKWARD) flag, the projection
- * expects a 4d input, and return the coordinates in the plane clipping space.
- * To get windows coordinates, we can use the
- * PROJ_TO_WINDOWS_SPACE flag.
+ * Compared to project, this function properly sets the z output value
+ * in the range [0, 1], depending on the projection depth range.  The
+ * behavior is more aligned to what OpenGL does.
  *
- * Parameters:
- *  proj    - A projection.
- *  flags   - Union of <PROJ_FLAGS> values, to modify the behavior of the
- *            function.
- *  v       - Input coordinates as homogenous coordinates.
- *  out     - Output coordinates.
+ * Return false in case of error.  We return true even if the point is
+ * not visible.
  */
-bool project(const projection_t *proj, int flags,
-             const double v[S 4], double out[S 4]);
+bool project_to_win(const projection_t *proj, const double input[S 3],
+                    double out[S 3]);
+
+/*
+ * Function: project_to_win_xy
+ * Similar to project_to_win, but only returns the x and y coordinates.
+ */
+bool project_to_win_xy(const projection_t *proj, const double input[S 4],
+                       double out[S 2]);
+/*
+ * Function: project_to_clip
+ * Project from view coordinates to clip space.
+ *
+ * Return false in case of error.  Note: we return true even if the point is
+ * not visible.
+ */
+bool project_to_clip(const projection_t *proj, const double input[S 3],
+                     double out[S 4]);
 
 /*
  * Function: unproject
@@ -152,17 +159,14 @@ bool project(const projection_t *proj, int flags,
  *
  * Parameters:
  *   proj   - A projection.
- *   flags  - Union of <PROJ_FLAGS> value.  We can use `FROM_WINDOW_SPACE`
- *            to specify that the inputs is in window coordinates.
- *            By default we unproject from clipping space.
- *   v      - Input coordinates.
- *   out    - Output coordinates.
+ *   v      - Input xyz coordinates, in window space.
+ *   out    - Output xyz coordinates in view space.
  *
  * Return:
  *   True for success.
  */
-bool unproject(const projection_t *proj, int flags,
-               const double v[S 4], double out[S 4]);
+bool unproject(const projection_t *proj,
+               const double v[S 3], double out[S 3]);
 
 #undef S
 

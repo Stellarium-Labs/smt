@@ -126,8 +126,7 @@ static void render_fog(const painter_t *painter_, double alpha)
         healpix_pix2ang(1 << order, pix, &theta, &phi);
         // Skip tiles that will be totally transparent anyway.
         if (fabs(theta - M_PI / 2) > 20 * DD2R) continue;
-        if (painter_is_healpix_clipped(
-                    &painter, FRAME_OBSERVED, order, pix, true))
+        if (painter_is_healpix_clipped(&painter, FRAME_OBSERVED, order, pix))
             continue;
         uv_map_init_healpix(&map, order, pix, true, true);
         paint_quad(&painter, FRAME_OBSERVED, &map, split);
@@ -173,7 +172,7 @@ static int landscape_render(const obj_t *obj, const painter_t *painter_)
 
     if (ls->hips && hips_is_ready(ls->hips)) {
         vec3_mul(brightness, painter.color, painter.color);
-        hips_render(ls->hips, &painter, rg2h, 2 * M_PI, split_order);
+        hips_render(ls->hips, &painter, rg2h, split_order);
     }
     if (ls->shape) {
         obj_render(ls->shape, &painter);

@@ -13,14 +13,14 @@
 /* Degrees to radians */
 #define DD2R (1.745329251994329576923691e-2)
 
-static void proj_mercator_project(
-        const projection_t *proj, int flags, const double v[4], double out[4])
+static bool proj_mercator_project(
+        const projection_t *proj, const double v[3], double out[3])
 {
-    double s;
-    double p[3];
+    double s, r, p[3];
     vec3_copy(v, p);
 
-    if (!(flags & PROJ_ALREADY_NORMALIZED)) vec3_normalize(p, p);
+    r = vec3_norm(p);
+    vec3_normalize(p, p);
     s = p[1];
     p[0] = atan2(p[0], -p[2]);
     if (fabs(s) != 1)
@@ -28,22 +28,19 @@ static void proj_mercator_project(
     else
         p[1] = 1024;  // Just use an arbitrary large value.
 
-    p[0] /= proj->scaling[0];
-    p[1] /= proj->scaling[1];
     vec3_copy(p, out);
-    out[3] = 1.0;
+    out[2] = -1;
+    vec3_mul(r, out, out);
+    return true;
 }
 
-static bool proj_mercator_backward(const projection_t *proj, int flags,
-            const double *v, double *out)
+static bool proj_mercator_backward(const projection_t *proj,
+            const double v[3], double out[3])
 {
     double e, h, h1, sin_delta, cos_delta;
     double p[3];
     bool ret;
     vec3_copy(v, p);
-
-    p[0] *= proj->scaling[0];
-    p[1] *= proj->scaling[1];
 
     ret = p[1] < M_PI_2 && p[1] > -M_PI_2 && p[0] > -M_PI && p[0] < M_PI;
 
@@ -61,9 +58,8 @@ static bool proj_mercator_backward(const projection_t *proj, int flags,
 
 void proj_mercator_init(projection_t *p, double fov, double aspect)
 {
-    p->scaling[0] = fov / 2;
-    p->scaling[1] = p->scaling[0] / aspect;
     p->flags = PROJ_HAS_DISCONTINUITY;
+    // XXX: set the projection matrix.
 }
 
 static const projection_klass_t proj_mercator_klass = {

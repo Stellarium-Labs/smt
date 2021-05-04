@@ -8,17 +8,12 @@
  */
 
 #include "swe.h"
-
 #include "line_mesh.h"
+#include "render.h"
 
 #include <float.h>
 
 static bool g_debug = false;
-
-#define REND(rend, f, ...) do { \
-        if ((rend)->f) (rend)->f((rend), ##__VA_ARGS__); \
-    } while (0)
-
 
 // Test if a shape in clipping coordinates is clipped or not.
 static bool is_clipped(int n, double (*pos)[4])
@@ -142,13 +137,14 @@ int paint_prepare(painter_t *painter, double win_w, double win_h,
 
     cull_flipped = (bool)(painter->proj->flags & PROJ_FLIP_HORIZONTAL) !=
                    (bool)(painter->proj->flags & PROJ_FLIP_VERTICAL);
-    REND(painter->rend, prepare, win_w, win_h, scale, cull_flipped);
+    render_prepare(painter->rend, painter->proj,
+                   win_w, win_h, scale, cull_flipped);
     return 0;
 }
 
 int paint_finish(const painter_t *painter)
 {
-    REND(painter->rend, finish);
+    render_finish(painter->rend);
     return 0;
 }
 
@@ -175,7 +171,7 @@ void painter_set_texture(painter_t *painter, int slot, texture_t *tex,
 
 int paint_2d_points(const painter_t *painter, int n, const point_t *points)
 {
-    REND(painter->rend, points_2d, painter, n, points);
+    render_points_2d(painter->rend, painter, n, points);
     return 0;
 }
 
@@ -192,7 +188,7 @@ int paint_quad(const painter_t *painter,
 
     // XXX: need to check if we intersect discontinuity, and if so split
     // the painter projection.
-    REND(painter->rend, quad, painter, frame, grid_size, map);
+    render_quad(painter->rend, painter, frame, grid_size, map);
     return 0;
 }
 
@@ -200,17 +196,18 @@ int paint_text_bounds(const painter_t *painter, const char *text,
                       const double pos[2], int align, int effects,
                       double size, double bounds[4])
 {
-    REND(painter->rend, text, painter, text, pos, align, effects, size,
-         painter->color, 0, bounds);
+    render_text(painter->rend, painter, text, pos, NULL, align, effects, size,
+                painter->color, 0, bounds);
     return 0;
 }
 
 int paint_text(const painter_t *painter, const char *text,
-               const double pos[2], int align, int effects, double size,
+               const double win_pos[2], const double view_pos[3],
+               int align, int effects, double size,
                double angle)
 {
-    REND(painter->rend, text, painter, text, pos, align, effects, size,
-         painter->color, angle, NULL);
+    render_text(painter->rend, painter, text, win_pos, view_pos, align, effects,
+                size, painter->color, angle, NULL);
     return 0;
 }
 
@@ -229,12 +226,12 @@ int paint_texture(const painter_t *painter,
     if (!color) color = white;
     if (!uv) uv = uv_full;
     vec4_emul(painter->color, color, c);
-    REND(painter->rend, texture, tex, uv, pos, size, c, angle);
+    render_texture(painter->rend, tex, uv, pos, size, c, angle);
     return 0;
 }
 
 
-static void line_func(void *user, double t, double out[4])
+static void line_func(void *user, double t, double out[3])
 {
     double pos[4];
     const painter_t *painter = USER_GET(user, 0);
@@ -244,7 +241,8 @@ static void line_func(void *user, double t, double out[4])
 
     vec4_mix(line[0], line[1], t, pos);
     if (map) uv_map(map, pos, pos, NULL);
-    convert_framev4(painter->obs, frame, FRAME_VIEW, pos, out);
+    convert_framev4(painter->obs, frame, FRAME_VIEW, pos, pos);
+    vec3_copy(pos, out);
 }
 
 /*
@@ -257,8 +255,9 @@ static bool segment_intersects_discontinuity_line(
     const double a[3], const double b[3])
 {
     double x0, x1;
+    const double EPS = 0.00001;
     if (a[2] < 0 && b[2] < 0) return false; // Both in front of us.
-    if (a[0] * b[0] > 0) return false; // Both on same side of the line.
+    if (a[0] * b[0] > EPS) return false; // Both on same side of the line.
     if (a[2] > 0 && b[2] > 0) return true;
     x0 = atan2(a[0], -a[2]);
     x1 = atan2(b[0], -b[2]);
@@ -295,6 +294,7 @@ int paint_line(const painter_t *painter,
     int i, size;
     double view_pos[2][4];
     double (*win_line)[3] = NULL;
+    double (*pos_line)[3] = NULL;
     bool discontinuous = false;
     double splits[2][2][4];
 
@@ -319,10 +319,11 @@ int paint_line(const painter_t *painter,
 
     size = line_tesselate(line_func, painter->proj,
                           USER_PASS(painter, &frame, line, map),
-                          split, &win_line);
+                          split, &pos_line, &win_line);
     if (size < 0) goto split;
-    REND(painter->rend, line, painter, win_line, size);
+    render_line(painter->rend, painter, pos_line, win_line, size);
     free(win_line);
+    free(pos_line);
     return 0;
 
 split:
@@ -373,17 +374,17 @@ int paint_mesh(const painter_t *painter_, int frame, int mode,
 
     switch (mode) {
     case MODE_TRIANGLES:
-        REND(painter.rend, mesh, &painter, frame, mode,
+        render_mesh(painter.rend, &painter, frame, mode,
              mesh->vertices_count, mesh->vertices,
              mesh->triangles_count, mesh->triangles, use_stencil);
         break;
     case MODE_LINES:
-        REND(painter.rend, mesh, &painter, frame, mode,
+        render_mesh(painter.rend, &painter, frame, mode,
              mesh->vertices_count, mesh->vertices,
              mesh->lines_count, mesh->lines, false);
         break;
     case MODE_POINTS:
-        REND(painter.rend, mesh, &painter, frame, mode,
+        render_mesh(painter.rend, &painter, frame, mode,
              mesh->vertices_count, mesh->vertices,
              mesh->points_count, mesh->points, false);
         break;
@@ -404,12 +405,12 @@ subdivide:
     // XXX: can clean up this.
     switch (mode) {
     case MODE_TRIANGLES:
-        REND(painter.rend, mesh, &painter, FRAME_VIEW, mode,
+        render_mesh(painter.rend, &painter, FRAME_VIEW, mode,
                  mesh2->vertices_count, mesh2->vertices,
                  mesh2->triangles_count, mesh2->triangles, use_stencil);
         break;
     case MODE_LINES:
-        REND(painter.rend, mesh, &painter, FRAME_VIEW, mode,
+        render_mesh(painter.rend, &painter, FRAME_VIEW, mode,
                  mesh2->vertices_count, mesh2->vertices,
                  mesh2->lines_count, mesh2->lines, false);
         break;
@@ -490,34 +491,49 @@ bool painter_is_2d_circle_clipped(const painter_t *painter, const double p[2],
 }
 
 bool painter_is_quad_clipped(const painter_t *painter, int frame,
-                             const uv_map_t *map, bool outside)
+                             const uv_map_t *map)
+{
+    double corners[4][4];
+    double quad[4][4], normals[4][3];
+    double p[4][4];
+    double bounding_cap[4];
+    int i;
+    int order = map->order;
+
+    uv_map_get_bounding_cap(map, bounding_cap);
+    assert(vec3_is_normalized(bounding_cap));
+    if (painter_is_cap_clipped(painter, frame, bounding_cap))
+        return true;
+    if (order < 2)
+        return false;
+
+    uv_map_grid(map, 1, corners, normals);
+    for (i = 0; i < 4; i++) {
+        vec3_copy(corners[i], quad[i]);
+        quad[i][3] = 1.0;
+        convert_framev4(painter->obs, frame, FRAME_VIEW, quad[i], quad[i]);
+        project_to_clip(painter->proj, quad[i], p[i]);
+        assert(!isnan(p[i][0]));
+    }
+    return is_clipped(4, p);
+}
+
+static bool painter_is_planet_quad_clipped(const painter_t *painter, int frame,
+                                           const uv_map_t *map)
 {
     double corners[4][4];
     double quad[4][4], normals[4][3], normal[4];
     double p[4][4], direction[3];
-    double bounding_cap[4];
     uv_map_t children[4];
     int i;
     int order = map->order;
 
-    if (outside) {
-        uv_map_get_bounding_cap(map, bounding_cap);
-        assert(vec3_is_normalized(bounding_cap));
-        if (painter_is_cap_clipped(painter, frame, bounding_cap))
-            return true;
-        if (order < 2)
-            return false;
-    }
-
     // At too low orders, the tiles are too distorted which can give false
     // positive, so we check the children in that case.
     if (order < 2) {
-        // Planet case only
-        assert(!outside);
         uv_map_subdivide(map, children);
         for (i = 0; i < 4; i++) {
-            if (!painter_is_quad_clipped(
-                        painter, frame, &children[i], outside))
+            if (!painter_is_planet_quad_clipped(painter, frame, &children[i]))
                 return false;
         }
         return true;
@@ -528,7 +544,7 @@ bool painter_is_quad_clipped(const painter_t *painter, int frame,
         vec3_copy(corners[i], quad[i]);
         quad[i][3] = 1.0;
         convert_framev4(painter->obs, frame, FRAME_VIEW, quad[i], quad[i]);
-        project(painter->proj, 0, quad[i], p[i]);
+        project_to_clip(painter->proj, quad[i], p[i]);
         assert(!isnan(p[i][0]));
     }
     if (is_clipped(4, p)) return true;
@@ -542,7 +558,7 @@ bool painter_is_quad_clipped(const painter_t *painter, int frame,
      * the view z value, but with the dot product of the normal and the
      * direction vector to the middle of the planet.
      */
-    if (!outside && order > 1) {
+    if (order > 1) {
         vec3_copy((*map->transf)[3], direction);
         vec3_normalize(direction, direction);
         convert_frame(painter->obs, frame, FRAME_VIEW, true,
@@ -562,12 +578,23 @@ bool painter_is_quad_clipped(const painter_t *painter, int frame,
 }
 
 bool painter_is_healpix_clipped(const painter_t *painter, int frame,
-                                int order, int pix, bool outside)
+                                int order, int pix)
 {
     uv_map_t map;
     uv_map_init_healpix(&map, order, pix, false, false);
-    return painter_is_quad_clipped(painter, frame, &map, outside);
+    return painter_is_quad_clipped(painter, frame, &map);
 }
+
+bool painter_is_planet_healpix_clipped(const painter_t *painter,
+                                       const double transf[4][4],
+                                       int order, int pix)
+{
+    uv_map_t map;
+    uv_map_init_healpix(&map, order, pix, false, false);
+    map.transf = (void*)transf;
+    return painter_is_planet_quad_clipped(painter, FRAME_ICRF, &map);
+}
+
 
 /* Draw the contour lines of a shape.
  *
@@ -666,6 +693,7 @@ int paint_orbit(const painter_t *painter_, int frame,
     convert_frame(painter.obs, frame, FRAME_VIEW, false, transf[3], center);
     painter.lines.fade_dist_min = -center[2] - k_a;
     painter.lines.fade_dist_max = -center[2] + k_a * 2;
+    painter.flags |= PAINTER_ENABLE_DEPTH;
     paint_line(&painter, frame, line, &map, 128, 0);
     return 0;
 }
@@ -712,7 +740,7 @@ int paint_2d_ellipse(const painter_t *painter_,
     s[0] = sqrt(a2);
     s[1] = sqrt(b2);
     angle = atan2(m[0][1], m[0][0]);
-    REND(painter.rend, ellipse_2d, &painter, p, s, angle, nb_dashes);
+    render_ellipse_2d(painter.rend, &painter, p, s, angle, nb_dashes);
 
     if (label_pos) {
         label_pos[1] = DBL_MAX;
@@ -751,7 +779,7 @@ int paint_2d_rect(const painter_t *painter, const double transf[3][3],
     s[0] = vec2_norm(m[0]);
     s[1] = vec2_norm(m[1]);
     angle = atan2(m[0][1], m[0][0]);
-    REND(painter->rend, rect_2d, painter, p, s, angle);
+    render_rect_2d(painter->rend, painter, p, s, angle);
     return 0;
 }
 
@@ -775,7 +803,7 @@ int paint_2d_line(const painter_t *painter, const double transf[3][3],
         mat3_mul_vec3(transf, p1_win, p1_win);
         mat3_mul_vec3(transf, p2_win, p2_win);
     }
-    REND(painter->rend, line_2d, painter, p1_win, p2_win);
+    render_line_2d(painter->rend, painter, p1_win, p2_win);
     return 0;
 }
 
@@ -838,7 +866,7 @@ void painter_project_ellipse(const painter_t *painter, int frame,
     mat3_ry(-de, mat, mat);
     mat3_mul_vec3(mat, p, p);
     convert_frame(painter->obs, frame, FRAME_VIEW, true, p, p);
-    project(painter->proj, PROJ_TO_WINDOW_SPACE, p, c);
+    project_to_win(painter->proj, p, c);
 
     // Point ellipse.
     if (size_x == 0) {
@@ -859,7 +887,7 @@ void painter_project_ellipse(const painter_t *painter, int frame,
     mat3_mul_vec3(mat, p, p);
     vec3_normalize(p, p);
     convert_frame(painter->obs, frame, FRAME_VIEW, true, p, p);
-    project(painter->proj, PROJ_TO_WINDOW_SPACE, p, a);
+    project_to_win(painter->proj, p, a);
 
     // 3. Semi minor.
     vec4_set(p, 1, 0, 0, 0);
@@ -873,7 +901,7 @@ void painter_project_ellipse(const painter_t *painter, int frame,
     mat3_mul_vec3(mat, p, p);
     vec3_normalize(p, p);
     convert_frame(painter->obs, frame, FRAME_VIEW, true, p, p);
-    project(painter->proj, PROJ_TO_WINDOW_SPACE, p, b);
+    project_to_win(painter->proj, p, b);
 
     vec2_copy(c, win_pos);
     vec2_sub(a, c, a);
@@ -883,31 +911,37 @@ void painter_project_ellipse(const painter_t *painter, int frame,
     win_size[1] = 2 * vec2_norm(b);
 }
 
+/*
+ * Check if a position in windows coordinates is visible or not.
+ */
+static bool is_visible_win(const double pos[3], const double win_size[2])
+{
+    return pos[0] >= 0 && pos[0] < win_size[0] &&
+           pos[1] >= 0 && pos[1] < win_size[1] &&
+           pos[2] >= 0 && pos[2] <= 1;
+}
+
 bool painter_project(const painter_t *painter, int frame,
                      const double pos[3], bool at_inf, bool clip_first,
                      double win_pos[2]) {
-    double v[4];
-    bool ret;
+    double v[3];
     if (clip_first) {
         if (painter_is_point_clipped_fast(painter, frame, pos, at_inf))
             return false;
     }
     convert_frame(painter->obs, frame, FRAME_VIEW, at_inf, pos, v);
-    ret = project(painter->proj, (at_inf ? PROJ_ALREADY_NORMALIZED : 0) |
-                  PROJ_TO_WINDOW_SPACE, v, v);
+    if (!project_to_win(painter->proj, v, v))
+        return false;
     vec2_copy(v, win_pos);
-    return ret;
+    return is_visible_win(v, painter->proj->window_size);
 }
 
 bool painter_unproject(const painter_t *painter, int frame,
                      const double win_pos[2], double pos[3]) {
-    double p[4];
+    double p[4] = {win_pos[0], win_pos[1], 0};
     bool ret;
-    // Win to NDC.
-    p[0] = win_pos[0] / painter->proj->window_size[0] * 2 - 1;
-    p[1] = 1 - win_pos[1] / painter->proj->window_size[1] * 2;
-    // NDC to view.
-    ret = unproject(painter->proj, 0, p, p);
+    ret = unproject(painter->proj, p, p);
+    vec3_normalize(p, p);
     convert_frame(painter->obs, FRAME_VIEW, frame, true, p, pos);
     return ret;
 }

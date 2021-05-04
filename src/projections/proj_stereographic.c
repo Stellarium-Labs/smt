@@ -38,36 +38,35 @@
  * totally sure about the best way to do that.
  */
 
-static void proj_stereographic_project(
-        const projection_t *proj, int flags, const double v[4], double out[4])
+static bool proj_stereographic_project(
+        const projection_t *proj, const double v[3], double out[3])
 {
-    double one_over_h;
-    vec3_copy(v, out);
-    if (!(flags & PROJ_ALREADY_NORMALIZED)) vec3_normalize(out, out);
+    double d, one_over_h;
+
+    d = vec3_norm(v);
+    vec3_mul(1. / d, v, out);
     // Discountinuity case.
     if (out[2] == 1.0) {
         memset(out, 0, 4 * sizeof(double));
-        return;
+        return false;
     }
     one_over_h = 1.0 / (0.5 * (1.0 - out[2]));
-    out[0] *= one_over_h / proj->scaling[0];
-    out[1] *= one_over_h / proj->scaling[1];
-    out[2] = 0.0; // Z = 0 => Center in the clipping space.
-    out[3] = 1.0; // w value.
+    out[0] *= one_over_h;
+    out[1] *= one_over_h;
+    out[2] = -1;
+    vec3_mul(d, out, out);
+    return true;
 }
 
-static bool proj_stereographic_backward(const projection_t *proj, int flags,
-                                        const double v[2], double out[4])
+static bool proj_stereographic_backward(const projection_t *proj,
+                                        const double v[3], double out[3])
 {
     double lqq;
     double p[3] = {0};
     vec2_copy(v, p);
-    p[0] *= proj->scaling[0];
-    p[1] *= proj->scaling[1];
     lqq = 0.25 * (p[0] * p[0] + p[1] * p[1]);
     p[2] = lqq - 1.0;
     vec3_mul(1.0 / (lqq + 1.0), p, out);
-    out[3] = 0.0;
     return true;
 }
 
@@ -83,10 +82,11 @@ static void proj_stereographic_compute_fov(int id, double fov, double aspect,
     }
 }
 
-static void proj_stereographic_init(projection_t *p, double fovx, double aspect)
+static void proj_stereographic_init(projection_t *p, double fovy, double aspect)
 {
-    p->scaling[0] = 2 * tan(fovx / 4);
-    p->scaling[1] = p->scaling[0] / aspect;
+    double fovy2 = 2 * atan(2 * tan(fovy / 4));
+    const double clip_near = 5 * DM2AU;
+    mat4_inf_perspective(p->mat, fovy2 * DR2D, aspect, clip_near);
 }
 
 static const projection_klass_t proj_stereographic_klass = {

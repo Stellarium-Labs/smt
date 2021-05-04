@@ -23,7 +23,6 @@
 typedef struct hips hips_t;
 
 enum {
-    HIPS_PLANET                 = 1 << 0,
     HIPS_FORCE_USE_ALLSKY       = 1 << 1,
     HIPS_LOAD_IN_THREAD         = 1 << 2,
     HIPS_CACHED_ONLY            = 1 << 3,
@@ -140,6 +139,9 @@ const void *hips_get_tile(hips_t *hips, int order, int pix, int flags,
  * - the allsky image has been loaded (if there is one).
  */
 bool hips_is_ready(hips_t *hips);
+
+// Same as hips_is_ready.
+bool hips_update(hips_t *hips);
 
 /*
  * Function: hips_traverse
@@ -285,11 +287,20 @@ void hips_set_label(hips_t *hips, const char* label);
  * Parameters:
  *   hips    - A hips survey.
  *   painter - The painter used to render.
- *   angle   - Visible angle the survey has in the sky.
- *             (2 * PI for full sky surveys).
  */
-int hips_get_render_order(const hips_t *hips, const painter_t *painter,
-                          double angle);
+int hips_get_render_order(const hips_t *hips, const painter_t *painter);
+
+/*
+ * Function: hips_get_render_order
+ * Return the max order at which a planet survey will be rendered.
+ *
+ * Parameters:
+ *   hips    - A hips survey.
+ *   painter - The painter used to render.
+ *   mat     - 4x4 transformation matrix of the planet position / scale.
+ */
+int hips_get_render_order_planet(const hips_t *hips, const painter_t *painter,
+                                 const double mat[4][4]);
 
 /*
  * Function: hips_render
@@ -300,29 +311,12 @@ int hips_get_render_order(const hips_t *hips, const painter_t *painter,
  *   painter - The painter used to render.
  *   transf  - Transformation applied to the unit sphere to set the position
  *             in the sky.  Can be set to NULL for identity.
- *   angle   - Visible angle the survey has in the sky.
- *             (2 * PI for full sky surveys).
  *   split_order - The requested order of the final quad divisions.
  *                 The actual split order could be higher if the rendering
  *                 order is too high for this value.
  */
 int hips_render(hips_t *hips, const painter_t *painter,
-                const double transf[4][4], double angle,
-                int split_order);
-
-/*
- * Function: hips_render_traverse
- * Similar to hips_render, but instead of actually rendering the tiles
- *  we call a callback function.  This can be used when we need better
- *  control on the rendering.
- */
-int hips_render_traverse(hips_t *hips, const painter_t *painter,
-                         const double transf[4][4],
-                         double angle, int split_order, void *user,
-                         int callback(hips_t *hips, const painter_t *painter,
-                                      const double transf[4][4],
-                                      int order, int pix, int split,
-                                      int flags, void *user));
+                const double transf[4][4], int split_order);
 
 /*
  * Function: hips_parse_date

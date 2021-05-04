@@ -13,15 +13,18 @@
 /* Degrees to radians */
 #define DD2R (1.745329251994329576923691e-2)
 #define DR2D (57.29577951308232087679815)
+#define DAU (149597870.7e3)
+#define DM2AU  (1. / DAU)
 
-static void proj_mollweide_project(
-        const projection_t *proj, int flags, const double v[4], double out[4])
+static bool proj_mollweide_project(
+        const projection_t *proj, const double v[3], double out[3])
 {
-    double phi, lambda, theta, d, k;
+    double phi, lambda, theta, d, k, length;
     int i;
     const int MAX_ITER = 10;
     const double PRECISION = 1e-7;
 
+    length = vec3_norm(v);
     // Computation using algo from wikipedia:
     // https://en.wikipedia.org/wiki/Mollweide_projection
     lambda = atan2(v[0], -v[2]);
@@ -40,12 +43,9 @@ static void proj_mollweide_project(
 
     out[0] = 2 * sqrt(2) / M_PI * lambda * cos(theta);
     out[1] = sqrt(2) * sin(theta);
-
-    out[0] /= proj->scaling[0];
-    out[1] /= proj->scaling[1];
-
-    out[2] = 0;
-    out[3] = 1;
+    out[2] = -1;
+    vec3_mul(length, out, out);
+    return true;
 }
 
 static double clamp(double x, double a, double b)
@@ -53,13 +53,13 @@ static double clamp(double x, double a, double b)
     return x < a ? a : x > b ? b : x;
 }
 
-static bool proj_mollweide_backward(const projection_t *proj, int flags,
-            const double v[2], double out[4])
+static bool proj_mollweide_backward(const projection_t *proj,
+            const double v[3], double out[3])
 {
     double x, y, theta, phi, lambda, cp;
     bool ret = true;
-    x = v[0] * proj->scaling[0];
-    y = v[1] * proj->scaling[1];
+    x = v[0];
+    y = v[1];
 
     if (fabs(y) > sqrt(2)) {
         ret = false;
@@ -80,7 +80,6 @@ static bool proj_mollweide_backward(const projection_t *proj, int flags,
     out[0] = cp * sin(lambda);
     out[1] = sin(phi);
     out[2] = -cp * cos(lambda);
-    out[3] = 0;
     return ret;
 }
 
@@ -91,32 +90,12 @@ static void proj_mollweide_compute_fov(int id, double fov, double aspect,
     *fovy = fov / aspect;
 }
 
-static inline double smoothstep(double edge0, double edge1, double x)
+void proj_mollweide_init(projection_t *p, double fovy, double aspect)
 {
-    x = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-    return x * x * (3.0 - 2.0 * x);
-}
-
-static inline double mix(double x, double y, double t)
-{
-    return x * (1.0 - t) + y * t;
-}
-
-void proj_mollweide_init(projection_t *p, double fovx, double aspect)
-{
-    p->scaling[0]                = fovx / M_PI * sqrt(2);
-    p->scaling[1]                = p->scaling[0] / aspect;
-    p->flags                     = PROJ_HAS_DISCONTINUITY;
-}
-
-void proj_mollweide_adaptive_init(projection_t *p, double fovx, double aspect)
-{
-    // μ ellipse ratio such that the scale at the equator equals one.
-    // http://master.grad.hr/hdgg/kog_stranica/kog15/2Lapaine-KoG15.pdf
-    double mu = M_PI * M_PI / 4;
-    double scale = smoothstep(180, 360, fovx * DR2D);
-    proj_mollweide_init(p, fovx, aspect);
-    p->scaling[1] *= mix(mu / 2, 1, scale);
+    p->flags = PROJ_HAS_DISCONTINUITY;
+    double fovy2 = 2 * atan(fovy / M_PI * sqrt(2));
+    const double clip_near = 5 * DM2AU;
+    mat4_inf_perspective(p->mat, fovy2 * DR2D, aspect, clip_near);
 }
 
 static const projection_klass_t proj_mollweide_klass = {
@@ -130,15 +109,3 @@ static const projection_klass_t proj_mollweide_klass = {
     .compute_fovs           = proj_mollweide_compute_fov,
 };
 PROJECTION_REGISTER(proj_mollweide_klass);
-
-static const projection_klass_t proj_mollweide_adaptive_klass = {
-    .name                   = "mollweide_adaptive",
-    .id                     = PROJ_MOLLWEIDE_ADAPTIVE,
-    .max_fov                = 360 * DD2R,
-    .max_ui_fov             = 360 * DD2R,
-    .init                   = proj_mollweide_adaptive_init,
-    .project                = proj_mollweide_project,
-    .backward               = proj_mollweide_backward,
-    .compute_fovs           = proj_mollweide_compute_fov,
-};
-PROJECTION_REGISTER(proj_mollweide_adaptive_klass);

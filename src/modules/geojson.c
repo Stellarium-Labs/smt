@@ -329,7 +329,8 @@ static int image_render(const obj_t *obj, const painter_t *painter_)
                 vec2_copy(feature->text_offset, ofs);
                 vec2_rotate(feature->text_rotate, ofs, ofs);
                 vec2_add(pos, ofs, pos);
-                paint_text(&painter, feature->title, pos, feature->text_anchor,
+                paint_text(&painter, feature->title, pos, NULL,
+                           feature->text_anchor,
                            0, FONT_SIZE_BASE, feature->text_rotate);
             }
         }
@@ -406,8 +407,7 @@ static bool mesh_intersects_box(const mesh_t *mesh_, const painter_t *painter,
     for (i = 0; i < mesh->vertices_count; i++) {
         vec3_normalize(mesh->vertices[i], p);
         convert_frame(painter->obs, FRAME_ICRF, FRAME_VIEW, true, p, p);
-        project(painter->proj, PROJ_ALREADY_NORMALIZED | PROJ_TO_WINDOW_SPACE,
-                p, p);
+        project_to_win(painter->proj, p, p);
         vec2_copy(p, mesh->vertices[i]);
     }
     ret = mesh_intersects_2d_box(mesh, box);
@@ -497,13 +497,12 @@ static bool survey_iter_visible_tiles(
     int render_order;
     hips_t *hips = survey->hips;
 
-    render_order = hips_get_render_order(hips, painter, 2 * M_PI);
+    render_order = hips_get_render_order(hips, painter);
     render_order = clamp(render_order, hips->order_min, hips->order);
 
     while (true) {
         if (!hips_iter_next(iter, order, pix)) return false;
-        if (painter_is_healpix_clipped(
-                    painter, hips->frame, *order, *pix, true))
+        if (painter_is_healpix_clipped(painter, hips->frame, *order, *pix))
             continue;
         if (*order < render_order) {
             hips_iter_push_children(iter, *order, *pix);

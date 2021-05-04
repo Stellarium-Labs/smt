@@ -28,16 +28,20 @@ struct observer
 
     double pressure;    // Control the refraction.  Zero for no refraction.
 
-    // Quaternion representing the mount orientation with respect to the
-    // observed (az/alt) referential.  Set to the identity quaternion by
-    // default for an az/alt mount.
-    double mount_quat[4];
+    /* Mount orientation rotation.
+     * Set to the identity (default) for an az/alt mount.
+     * Set to rh2i for an equatorial mount. */
+    double ro2m[3][3];
 
     // Rotations relative to the mount referential.  Pitch and yaw
     // correspond to azimuth and altitude when using an alt/az mount.
     double pitch;
     double yaw;
     double roll;
+
+    // If space is true, then the obs_pvg value stays fix instead of being
+    // automatically updated.
+    bool space;
 
     // Extra rotations applied to the view matrix in altitude.
     // Set this to have the centered objet not located at screen center
@@ -48,18 +52,13 @@ struct observer
     double last_update;
     double last_accurate_update;
 
-    // Hash value that represents a given observer state for which the accurate
-    // values have been computed. Used to prevent updating object data several
-    // times with the same observer.
-    uint64_t hash_accurate;
-
     // Hash value that represents the last observer state for which the
     // values have been computed. Used to prevent updating object data several
     // times with the same observer.
     uint64_t hash;
 
-    // Hash of a partial state of the observer. If it is unchanged, it is
-    // safe to use make fast update.
+    // Hash of a partial state of the observer. If it has changed, it is
+    // not safe to perform a fast update.
     uint64_t hash_partial;
 
     // Different times, all in MJD.
@@ -98,7 +97,6 @@ struct observer
     // e: Ecliptic (right handed).
     // m: Mount (observed + mount rotation).
     // v: View (Mount + view direction).
-    double ro2m[3][3];  // Rotate from observed to mount.
     double ro2v[3][3];  // Rotate from observed to view.
     double rv2o[3][3];  // Rotate from view to observed.
     double ri2h[3][3];  // CIRF to horizontal.

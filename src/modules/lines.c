@@ -152,6 +152,7 @@ static struct {
 typedef struct lines lines_t;
 struct lines {
     obj_t       obj;
+    bool        visible;
 };
 
 typedef struct line line_t;
@@ -166,7 +167,7 @@ struct line {
 };
 
 // Test if a shape in clipping coordinates is clipped or not.
-static bool is_clipped(const double pos[4][4], double clip[4][4])
+static bool is_clipped(const double pos[4][3], double clip[4][4])
 {
     // The six planes equations:
     const int P[6][4] = {
@@ -207,14 +208,25 @@ static bool is_clipped(const double pos[4][4], double clip[4][4])
     return true;
 }
 
+/*
+ * Check if a position in windows coordinates is visible or not.
+ */
+static bool is_visible_win(const double pos[3], const double win_size[2])
+{
+    return pos[0] >= 0 && pos[0] < win_size[0] &&
+           pos[1] >= 0 && pos[1] < win_size[1] &&
+           pos[2] >= 0 && pos[2] <= 1;
+}
+
 static int lines_init(obj_t *obj, json_value *args)
 {
-    obj_t *lines = obj;
+    lines_t *lines = (void*)obj;
     int i;
     line_t *line;
 
+    lines->visible = true;
     for (i = 0; i < ARRAY_SIZE(LINES); i++) {
-        line = (line_t*)module_add_new(lines, "line", NULL);
+        line = (line_t*)module_add_new(&lines->obj, "line", NULL);
         line->obj.id = LINES[i].id;
         line->frame = LINES[i].frame;
         line->grid = LINES[i].grid;
@@ -237,8 +249,10 @@ static int lines_update(obj_t *obj, double dt)
 
 static int lines_render(const obj_t *obj, const painter_t *painter)
 {
+    lines_t *lines = (void*)obj;
     obj_t *line;
-    MODULE_ITER(obj, line, "line")
+    if (!lines->visible) return 0;
+    MODULE_ITER(lines, line, "line")
         line->klass->render(line, painter);
     return 0;
 }
@@ -363,8 +377,11 @@ static bool check_borders(const double a[3], const double b[3],
     bool visible[2];
     int border;
     const double VS[4][2] = {{+1, 0}, {-1, 0}, {0, -1}, {0, +1}};
-    visible[0] = project(proj, PROJ_TO_WINDOW_SPACE, a, pos[0]);
-    visible[1] = project(proj, PROJ_TO_WINDOW_SPACE, b, pos[1]);
+    project_to_win(proj, a, pos[0]);
+    project_to_win(proj, b, pos[1]);
+    visible[0] = is_visible_win(pos[0], proj->window_size);
+    visible[1] = is_visible_win(pos[1], proj->window_size);
+
     if (visible[0] != visible[1]) {
         win_to_ndc(proj, pos[0], pos[0]);
         win_to_ndc(proj, pos[1], pos[1]);
@@ -383,7 +400,7 @@ static bool check_borders(const double a[3], const double b[3],
 
 
 static void spherical_project(
-        const uv_map_t *map, const double v[2], double out[4])
+        const uv_map_t *map, const double v[2], double out[3])
 {
     const double (*rot)[3][3] = map->user;
     double az, al;
@@ -391,7 +408,6 @@ static void spherical_project(
     al = (v[1] - 0.5) * 180 * DD2R;
     eraS2c(az, al, out);
     mat3_mul_vec3(*rot, out, out);
-    out[3] = 0; // Project to infinity.
 }
 
 /*
@@ -493,7 +509,7 @@ static void render_label(const double p[2], const double u[2],
     pos[0] += n3[0] * size[1] / 2;
     pos[1] += n3[1] * size[1] / 2;
 
-    paint_text(&painter, buf, pos, ALIGN_CENTER | ALIGN_MIDDLE, 0,
+    paint_text(&painter, buf, pos, NULL, ALIGN_CENTER | ALIGN_MIDDLE, 0,
                text_size, label_angle);
 }
 
@@ -519,7 +535,7 @@ static void render_recursion(
     int i, j, dir;
     int split_az, split_al, new_splits[2], new_pos[2];
     double p[4], lines[4][4] = {}, u[2], v[2];
-    double pos_view[4][4], pos_clip[4][4];
+    double pos_view[4][3], pos_clip[4][4];
     double uv[4][2] = {{0.0, 1.0}, {1.0, 1.0}, {0.0, 0.0}, {1.0, 0.0}};
     double mat[3][3] = MAT3_IDENTITY;
     uv_map_t map = {
@@ -535,10 +551,9 @@ static void render_recursion(
     for (i = 0; i < 4; i++) {
         mat3_mul_vec2(mat, uv[i], p);
         spherical_project(&map, p, p);
-        convert_framev4(painter->obs, line->frame, FRAME_VIEW, p, p);
-        vec4_copy(p, pos_view[i]);
-        project(painter->proj, 0, p, p);
-        vec4_copy(p, pos_clip[i]);
+        convert_frame(painter->obs, line->frame, FRAME_VIEW, true, p, p);
+        vec3_copy(p, pos_view[i]);
+        project_to_clip(painter->proj, pos_view[i], pos_clip[i]);
     }
     // If the quad is clipped we stop the recursion.
     // We only start to test after a certain level to prevent distortion
@@ -615,7 +630,9 @@ keep_going:
 static void get_azalt_fov(const painter_t *painter, int frame,
                           double *azfov, double *altfov)
 {
-    double p[4] = {0, 0, 0, 0};
+    double w = painter->proj->window_size[0];
+    double h = painter->proj->window_size[1];
+    double p[4] = {w / 2, h / 2, 0, 0};
     double theta0, phi0, theta, phi;
     double theta_max = 0, theta_min = 0;
     double phi_max = 0, phi_min = 0;
@@ -627,14 +644,14 @@ static void get_azalt_fov(const painter_t *painter, int frame,
      * into the frame and testing the maximum and minimum distance to the
      * central point for each of them.
      */
-    unproject(painter->proj, 0, p, p);
+    unproject(painter->proj, p, p);
     convert_frame(painter->obs, FRAME_VIEW, frame, true, p, p);
     eraC2s(p, &theta0, &phi0);
 
     for (i = 0; i < N * N; i++) {
-        p[0] = 2 * ((i % N) / (double)(N - 1) - 0.5);
-        p[1] = 2 * ((i / N) / (double)(N - 1) - 0.5);
-        unproject(painter->proj, 0, p, p);
+        p[0] = (i % N) / (double)(N - 1) * w;
+        p[1] = (i / N) / (double)(N - 1) * h;
+        unproject(painter->proj, p, p);
         convert_frame(painter->obs, FRAME_VIEW, frame, true, p, p);
         eraC2s(p, &theta, &phi);
 
@@ -802,5 +819,9 @@ static obj_klass_t lines_klass = {
     .render = lines_render,
     .gui = lines_gui,
     .render_order = 35, // just before landscape.
+    .attributes = (attribute_t[]) {
+        PROPERTY(visible, TYPE_BOOL, MEMBER(lines_t, visible)),
+        {}
+    },
 };
 OBJ_REGISTER(lines_klass)

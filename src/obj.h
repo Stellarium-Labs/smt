@@ -120,6 +120,7 @@ struct obj_klass
     // For modules objects.
     int (*on_mouse)(obj_t *obj, int id, int state, double x, double y,
                     int buttons);
+    int (*on_zoom)(obj_t *obj, double k, double x, double y);
     int (*on_pinch)(obj_t *obj, int state, double x, double y, double scale,
                     int points_count);
 
@@ -467,6 +468,16 @@ char *obj_call_json_str(obj_t *obj, const char *attr, const char *args);
  * XXX: need to use a proper name!
  */
 const attribute_t *obj_get_attr_(const obj_t *obj, const char *attr);
+
+/*
+ * Function: obj_set_attrs_json
+ * Set several attributes in a single call from a json object
+ *
+ * This is experimental.  The optional restore parameter will be set to
+ * a json string that can be used to restore the settings to their original
+ * values.
+ */
+void obj_set_attrs_json(const obj_t *obj, const char *json, char **restore);
 
 
 // Register an object klass, so that we can create instances dynamically

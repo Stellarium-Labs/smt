@@ -30,8 +30,7 @@ static void update_matrices(observer_t *obs)
 {
     eraASTROM *astrom = &obs->astrom;
     // We work with 3x3 matrices, so that we can use the erfa functions.
-    double rm2v[3][3];  // Rotate from mount to view.
-    double ro2m[3][3];  // Rotate from observed to mount.
+    double rdir[3][3];
     double ro2v[3][3];  // Rotate from observed to view.
     double ri2h[3][3];  // Equatorial J2000 (ICRF) to horizontal.
     double rh2i[3][3];  // Horizontal to Equatorial J2000 (ICRF).
@@ -40,18 +39,24 @@ static void update_matrices(observer_t *obs)
     double re2i[3][3];  // Eclipic to Equatorial J2000 (ICRF).
     double rc2v[3][3];
     double view_rot[3][3];
-
-    quat_to_mat3(obs->mount_quat, ro2m);
-    mat3_set_identity(rm2v);
     // r2gl changes the coordinate from z up to y up orthonomal.
-    double r2gl[3][3] = {{0, 0,-1},
-                         {1, 0, 0},
-                         {0, 1, 0}};
-    mat3_rz(obs->roll, rm2v, rm2v);
-    mat3_rx(-obs->pitch, rm2v, rm2v);
-    mat3_ry(obs->yaw, rm2v, rm2v);
-    mat3_mul(rm2v, r2gl, rm2v);
-    mat3_mul(rm2v, ro2m, ro2v);
+    const double r2gl[3][3] = {{ 0, 0, -1},
+                               {-1, 0,  0},
+                               { 0, 1,  0}};
+
+    const double flip_y[3][3] = {{1,  0, 0},
+                                 {0, -1, 0},
+                                 {0,  0, 1}};
+
+    mat3_set_identity(rdir);
+    mat3_rx(obs->roll, rdir, rdir);
+    mat3_ry(obs->pitch, rdir, rdir);
+    mat3_rz(-obs->yaw, rdir, rdir);
+
+    if (mat3_det(obs->ro2m) > 0)
+        mat3_product(ro2v, 4, r2gl, flip_y, rdir, obs->ro2m);
+    else
+        mat3_product(ro2v, 3, r2gl, rdir, obs->ro2m);
 
     // Extra rotation for screen center offset.
     assert(!isnan(obs->view_offset_alt));
@@ -88,7 +93,6 @@ static void update_matrices(observer_t *obs)
     mat3_mul(ro2v, rc2v, rc2v);
 
     // Copy all
-    mat3_copy(ro2m, obs->ro2m);
     mat3_copy(ro2v, obs->ro2v);
     mat3_invert(obs->ro2v, obs->rv2o);
     mat3_copy(ri2h, obs->ri2h);
@@ -109,19 +113,21 @@ static void observer_compute_hash(observer_t *obs, uint64_t* hash_partial,
     H(hm);
     H(horizon);
     H(pressure);
+    H(space);
     *hash_partial = v;
-    H(mount_quat);
+    H(ro2m);
     H(pitch);
     H(yaw);
     H(roll);
     H(view_offset_alt);
     H(tt);
+    if (obs->space) H(obs_pvg);
     #undef H
     *hash = v;
 }
 
 static void correct_speed_of_light(double pv[2][3]) {
-    double ldt = vec3_norm(pv[0]) * DAU / LIGHT_YEAR_IN_METER * DJY;
+    double ldt = vec3_norm(pv[0]) * DAU2M / LIGHT_YEAR_IN_METER * DJY;
     vec3_addk(pv[0], pv[1], -ldt, pv[0]);
 }
 
@@ -136,64 +142,24 @@ static void update_nutation_precession_mat(observer_t *obs)
 
 }
 
-void observer_update(observer_t *obs, bool fast)
+static void observer_update_fast(observer_t *obs)
 {
-
-    uint64_t hash, hash_partial;
-    double dut1, r[3][3], x, y, theta, s, sp;
-
-    observer_compute_hash(obs, &hash_partial, &hash);
-    // Check if we have computed accurate positions already
-    if (hash == obs->hash_accurate)
-        return;
-    // Check if we have computed 'fast' positions already
-    if (fast && hash == obs->hash)
-        return;
-    fast = fast && hash_partial == obs->hash_partial &&
-            fabs(obs->last_accurate_update - obs->tt) < 1.0;
+    double dut1, theta, pvg[2][3];
 
     // Compute UT1 and UTC time.
-    if (obs->last_update != obs->tt) {
-        obs->utc = tt2utc(obs->tt, &dut1);
-        obs->ut1 = obs->utc + dut1 / ERFA_DAYSEC;
-    }
+    if (!obs->space && obs->last_update == obs->tt) goto end;
 
-    if (fast) {
-        if (obs->last_update != obs->tt) {
-            eraAper13(DJM0, obs->ut1, &obs->astrom);
-            eraPvu(obs->tt - obs->last_update, obs->earth_pvh, obs->earth_pvh);
-            eraPvu(obs->tt - obs->last_update, obs->earth_pvb, obs->earth_pvb);
-        }
-    } else {
+    obs->utc = tt2utc(obs->tt, &dut1);
+    obs->ut1 = obs->utc + dut1 / ERFA_DAYSEC;
 
-        // This is similar to a single call to eraApco13, except we handle
-        // the time conversion ourself, since erfa doesn't support dates
-        // before year -4800.
-        eraPnm06a(DJM0, obs->tt, r); // equinox based BPN matrix.
-        eraBpn2xy(r, &x, &y); // Extract CIP X,Y.
-        s = eraS06(DJM0, obs->tt, x, y); // Obtain CIO locator s.
-        // XXX: should be obs->ut1 here!  But it break the unit tests for now.
-        theta = eraEra00(DJM0, obs->utc); // Earth rotation angle.
-        sp = eraSp00(DJM0, obs->tt); // TIO locator s'.
+    if (!obs->space)
+        eraAper13(DJM0, obs->ut1, &obs->astrom);
+    eraPvu(obs->tt - obs->last_update, obs->earth_pvh, obs->earth_pvh);
+    eraPvu(obs->tt - obs->last_update, obs->earth_pvb, obs->earth_pvb);
 
-        eraEpv00(DJM0, obs->tt, obs->earth_pvh, obs->earth_pvb);
-        eraApco(DJM0, obs->tt, obs->earth_pvb, obs->earth_pvh[0], x, y, s,
-                theta, obs->elong, obs->phi, obs->hm, 0, 0, sp, 0, 0,
-                &obs->astrom);
-        obs->eo = eraEors(r, s); // Equation of origins.
-
-        // Update earth position.
-        eraCp(obs->astrom.eb, obs->obs_pvb[0]);
-        vec3_mul(ERFA_DC, obs->astrom.v, obs->obs_pvb[1]);
-        eraPvmpv(obs->obs_pvb, obs->earth_pvb, obs->obs_pvg);
-        // Update refraction constants.
-        refraction_prepare(obs->pressure, 15, 0.5, &obs->refa, &obs->refb);
-    }
-    eraPvmpv(obs->earth_pvb, obs->earth_pvh, obs->sun_pvb);
-
-    if (fast && obs->last_update != obs->tt) {
-        // Update observer geocentric position obs_pvg. We can't use eraPvu here
-        // as the movement is a rotation about the earth center and can't
+    if (!obs->space) {
+        // Update observer geocentric position obs_pvg. We can't use eraPvu
+        // here as the movement is a rotation about the earth center and can't
         // be approximated by a linear velocity  on a 24h time span
         theta = eraEra00(DJM0, obs->ut1);
         eraPvtob(obs->elong, obs->phi, obs->hm, 0, 0, 0, theta, obs->obs_pvg);
@@ -201,37 +167,117 @@ void observer_update(observer_t *obs, bool fast)
         eraTrxp(obs->astrom.bpn, obs->obs_pvg[0], obs->obs_pvg[0]);
         eraTrxp(obs->astrom.bpn, obs->obs_pvg[1], obs->obs_pvg[1]);
         // Set pos back in AU
-        eraSxp(1. / DAU, obs->obs_pvg[0], obs->obs_pvg[0]);
+        eraSxp(DM2AU, obs->obs_pvg[0], obs->obs_pvg[0]);
         // Set speed back in AU / day
-        eraSxp(ERFA_DAYSEC / DAU, obs->obs_pvg[1], obs->obs_pvg[1]);
-
-        // Compute the observer's barycentric position
-        eraPvppv(obs->earth_pvb, obs->obs_pvg, obs->obs_pvb);
+        eraSxp(ERFA_DAYSEC * DM2AU, obs->obs_pvg[1], obs->obs_pvg[1]);
+    } else {
+        vec3_mul(DAU2M, obs->obs_pvg[0], pvg[0]);
+        vec3_mul(DAU2M / ERFA_DAYSEC, obs->obs_pvg[1], pvg[1]);
+        eraApcs(DJM0, obs->tt, pvg, obs->earth_pvb, obs->earth_pvh[0],
+                &obs->astrom);
     }
 
-    update_matrices(obs);
-    if (!fast) update_nutation_precession_mat(obs);
+    // Compute the observer's barycentric position
+    eraPvppv(obs->earth_pvb, obs->obs_pvg, obs->obs_pvb);
 
+end:
+    update_matrices(obs);
+    eraPvmpv(obs->earth_pvb, obs->earth_pvh, obs->sun_pvb);
     // Compute sun's apparent position in observer reference frame
     eraPvmpv(obs->sun_pvb, obs->obs_pvb, obs->sun_pvo);
     // Correct in one shot space motion, annual & diurnal abberrations
     correct_speed_of_light(obs->sun_pvo);
+}
+
+static void observer_update_full(observer_t *obs)
+{
+    double dut1, r[3][3], x, y, theta, s, sp, pvg[2][3];
+
+    // Compute UT1 and UTC time.
+    if (obs->last_update != obs->tt) {
+        obs->utc = tt2utc(obs->tt, &dut1);
+        obs->ut1 = obs->utc + dut1 / ERFA_DAYSEC;
+    }
+
+    // This is similar to a single call to eraApco13, except we handle
+    // the time conversion ourself, since erfa doesn't support dates
+    // before year -4800.
+    eraPnm06a(DJM0, obs->tt, r); // equinox based BPN matrix.
+    eraBpn2xy(r, &x, &y); // Extract CIP X,Y.
+    s = eraS06(DJM0, obs->tt, x, y); // Obtain CIO locator s.
+    // XXX: should be obs->ut1 here!  But it break the unit tests for now.
+    theta = eraEra00(DJM0, obs->utc); // Earth rotation angle.
+    sp = eraSp00(DJM0, obs->tt); // TIO locator s'.
+
+    eraEpv00(DJM0, obs->tt, obs->earth_pvh, obs->earth_pvb);
+
+    if (!obs->space) {
+        eraApco(DJM0, obs->tt, obs->earth_pvb, obs->earth_pvh[0], x, y, s,
+                theta, obs->elong, obs->phi, obs->hm, 0, 0, sp, 0, 0,
+                &obs->astrom);
+    } else {
+        vec3_mul(DAU2M, obs->obs_pvg[0], pvg[0]);
+        vec3_mul(DAU2M / ERFA_DAYSEC, obs->obs_pvg[1], pvg[1]);
+        eraApcs(DJM0, obs->tt, pvg, obs->earth_pvb, obs->earth_pvh[0],
+                &obs->astrom);
+    }
+    obs->eo = eraEors(r, s); // Equation of origins.
+
+    // Update earth position.
+    eraCp(obs->astrom.eb, obs->obs_pvb[0]);
+    vec3_mul(ERFA_DC, obs->astrom.v, obs->obs_pvb[1]);
+    if (!obs->space)
+        eraPvmpv(obs->obs_pvb, obs->earth_pvb, obs->obs_pvg);
+    // Update refraction constants.
+    refraction_prepare(obs->pressure, 15, 0.5, &obs->refa, &obs->refb);
+    update_nutation_precession_mat(obs);
+
+    update_matrices(obs);
+    eraPvmpv(obs->earth_pvb, obs->earth_pvh, obs->sun_pvb);
+    // Compute sun's apparent position in observer reference frame
+    eraPvmpv(obs->sun_pvb, obs->obs_pvb, obs->sun_pvo);
+    // Correct in one shot space motion, annual & diurnal abberrations
+    correct_speed_of_light(obs->sun_pvo);
+}
+
+void observer_update(observer_t *obs, bool fast)
+{
+
+    uint64_t hash, hash_partial;
+
+    observer_compute_hash(obs, &hash_partial, &hash);
+    // Check if we have computed accurate positions already
+    if (hash == obs->hash)
+        return;
+
+    // Check if we have computed 'fast' positions already
+    if (fast) {
+        // Add one to the hash for the fast update hash value.
+        hash++;
+        if (hash == obs->hash)
+            return;
+        if (    hash_partial != obs->hash_partial ||
+                fabs(obs->last_accurate_update - obs->tt) >= 1.0)
+            fast = false;
+    }
+
+    if (fast)
+        observer_update_fast(obs);
+    else
+        observer_update_full(obs);
 
     obs->last_update = obs->tt;
     obs->hash_partial = hash_partial;
     obs->hash = hash;
-    if (!fast) {
-        obs->hash_accurate = hash;
+    if (!fast)
         obs->last_accurate_update = obs->tt;
-    }
 }
 
 static int observer_init(obj_t *obj, json_value *args)
 {
     observer_t*  obs = (observer_t*)obj;
-    quat_set_identity(obs->mount_quat);
-    observer_compute_hash(obs, &obs->hash_partial, &obs->hash_accurate);
-    obs->hash = obs->hash_accurate;
+    mat3_set_identity(obs->ro2m);
+    observer_compute_hash(obs, &obs->hash_partial, &obs->hash);
     return 0;
 }
 
@@ -267,8 +313,8 @@ bool observer_is_uptodate(const observer_t *obs, bool fast)
 {
     uint64_t hash, hash_partial;
     observer_compute_hash(obs, &hash_partial, &hash);
-    if (hash == obs->hash_accurate) return true;
-    if (fast && hash == obs->hash) return true;
+    if (hash == obs->hash) return true;
+    if (fast && (hash + 1 == obs->hash)) return true;
     return false;
 }
 
@@ -303,6 +349,7 @@ static obj_klass_t observer_klass = {
         PROPERTY(view_offset_alt, TYPE_ANGLE,
                  MEMBER(observer_t, view_offset_alt)),
         PROPERTY(azalt, TYPE_V3, .fn = observer_get_azalt),
+        PROPERTY(space, TYPE_BOOL, MEMBER(observer_t, space)),
         {}
     },
 };

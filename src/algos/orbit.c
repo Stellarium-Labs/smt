@@ -7,6 +7,7 @@
  * repository.
  */
 
+#include <assert.h>
 #include <math.h>
 #define PI (3.141592653589793238462643)
 
@@ -52,6 +53,8 @@ static double kepler(double m, double de, double precision)
  * Compute position and speed from orbit elements.
  *
  * Parameters:
+ *   precision - Precision for the kepler equation in rad.
+ *               set to 0.0 to use a faster non looping algorithm.
  *   mjd    - Time of the position (MJD).
  *   pos    - Get the computed position.
  *   speed  - Get the computed speed (can be NULL).
@@ -159,6 +162,7 @@ int orbit_elements_from_pv(const double p[3], const double v[3], double mu,
     int k;
     double h[3], n[3], ev[3], np, nv2, pdv, en, a, e, i, om, w, f, ec, ma;
     const double epsilon = 1e-15;
+    assert(mu);
 
     vec3_cross(p, v, h);
     vec3_cross((double[]){0, 0, 1}, h, n);

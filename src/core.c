@@ -10,6 +10,7 @@
 #include "swe.h"
 #include "algos/utctt.h"
 #include "navigation.h"
+#include "render.h"
 
 core_t *core;   // The global core object.
 
@@ -104,13 +105,20 @@ void core_get_proj(projection_t *proj)
 {
     double fovx, fovy;
     double aspect = core->win_size[0] / core->win_size[1];
+    double mat[4][4] = MAT4_IDENTITY;
     projection_compute_fovs(core->proj, core->fov, aspect, &fovx, &fovy);
-    projection_init(proj, core->proj, fovx,
+    projection_init(proj, core->proj, fovy,
                     core->win_size[0], core->win_size[1]);
-    if (core->flip_view_vertical)
+
+    if (core->flip_view_vertical) {
         proj->flags |= PROJ_FLIP_VERTICAL;
-    if (core->flip_view_horizontal)
+        mat4_iscale(mat, 1, -1, 1);
+    }
+    if (core->flip_view_horizontal) {
         proj->flags |= PROJ_FLIP_HORIZONTAL;
+        mat4_iscale(mat, -1, 1, 1);
+    }
+    mat4_mul(mat, proj->mat, proj->mat);
 }
 
 obj_t *core_get_obj_at(double x, double y, double max_dist)
@@ -243,15 +251,24 @@ void core_release(void)
     }
 }
 
+/*
+ * Get a projection scaling factor in the Y direction.
+ */
+static double proj_get_scaling_y(const projection_t *proj)
+{
+    return 1 / fabs(proj->mat[1][1]);
+}
+
 EMSCRIPTEN_KEEPALIVE
 void core_set_view_offset(double center_y_offset)
 {
-    double pix_angular_size;
+    double pix_angular_size, scaling_y;
     projection_t proj;
 
     core_get_proj(&proj);
     assert(proj.window_size[1]);
-    pix_angular_size = 1.0 * proj.scaling[1] / proj.window_size[1] * 2;
+    scaling_y = proj_get_scaling_y(&proj);
+    pix_angular_size = 1.0 * scaling_y / proj.window_size[1] * 2;
     core->observer->view_offset_alt = -center_y_offset * pix_angular_size;
 }
 
@@ -476,28 +493,6 @@ static double compute_vmag_for_radius(double target_r)
     return m;
 }
 
-/*
- * Function: win_to_observed
- * Convert a window 2D position to a 3D azalt direction.
- *
- * Parameters:
- *   x    - The window x position.
- *   y    - The window y position.
- *   p    - Corresponding 3D unit vector in azalt (after refraction).
- */
-static void win_to_observed(double x, double y, double p[3])
-{
-    projection_t proj;
-    double pos[4] = {x, y};
-
-    core_get_proj(&proj);
-    // Convert to NDC coordinates.
-    pos[0] = pos[0] / core->win_size[0] * 2 - 1;
-    pos[1] = -1 * (pos[1] / core->win_size[1] * 2 - 1);
-    unproject(&proj, 0, pos, pos);
-    convert_frame(core->observer, FRAME_VIEW, FRAME_OBSERVED, true, pos, p);
-}
-
 // Debug function to check for errors in the projections.
 static void render_proj_markers(const painter_t *painter_)
 {
@@ -514,11 +509,11 @@ static void render_proj_markers(const painter_t *painter_)
         eraS2c(lon * DD2R, lat * DD2R, p);
         p[3] = 0;
         mat4_mul_vec4(r, p, p);
-        project(painter.proj, PROJ_TO_WINDOW_SPACE, p, p_win);
+        project_to_win(painter.proj, p, p_win);
         paint_2d_ellipse(&painter, NULL, 0, p_win, VEC(2, 2), NULL);
 
-        unproject(painter.proj, PROJ_FROM_WINDOW_SPACE, p_win, p);
-        project(painter.proj, PROJ_TO_WINDOW_SPACE, p, p_win);
+        unproject(painter.proj, p_win, p);
+        project_to_win(painter.proj, p, p_win);
         paint_2d_ellipse(&painter, NULL, 0, p_win, VEC(4, 4), NULL);
     }
 }
@@ -554,7 +549,7 @@ int core_render(double win_w, double win_h, double pixel_scale)
     module_changed(&core->obj, "fps");
 
     if (!core->rend)
-        core->rend = render_gl_create();
+        core->rend = render_create();
     labels_reset();
 
     painter_t painter = {
@@ -611,10 +606,11 @@ EMSCRIPTEN_KEEPALIVE
 void core_on_mouse(int id, int state, double x, double y, int buttons)
 {
     obj_t *module;
+    int r;
     DL_FOREACH(core->obj.children, module) {
-        if (module->klass->on_mouse) {
-            module->klass->on_mouse(module, id, state, x, y, buttons);
-        };
+        if (!module->klass->on_mouse) continue;
+        r = module->klass->on_mouse(module, id, state, x, y, buttons);
+        if (r == 0) return;
     }
 }
 
@@ -623,10 +619,11 @@ void core_on_pinch(int state, double x, double y, double scale,
                    int points_count)
 {
     obj_t *module;
+    int r;
     DL_FOREACH(core->obj.children, module) {
-        if (module->klass->on_pinch) {
-            module->klass->on_pinch(module, state, x, y, scale, points_count);
-        };
+        if (!module->klass->on_pinch) continue;
+        r = module->klass->on_pinch(module, state, x, y, scale, points_count);
+        if (r == 0) return;
     }
 }
 
@@ -687,31 +684,15 @@ void core_on_char(uint32_t c)
 }
 
 EMSCRIPTEN_KEEPALIVE
-void core_on_zoom(double k, double x, double y) __attribute__((weak));
 void core_on_zoom(double k, double x, double y)
 {
-    double fov, pos_start[3], pos_end[3];
-    double sal, saz, dal, daz;
-    projection_t proj;
-
-    core_get_proj(&proj);
-    win_to_observed(x, y, pos_start);
-    obj_get_attr(&core->obj, "fov", &fov);
-    fov /= k;
-    fov = clamp(fov, CORE_MIN_FOV, proj.klass->max_ui_fov);
-    obj_set_attr(&core->obj, "fov", fov);
-    win_to_observed(x, y, pos_end);
-
-    // Adjust lat/az to keep the mouse point at the same position.
-    eraC2s(pos_start, &saz, &sal);
-    eraC2s(pos_end, &daz, &dal);
-    core->observer->yaw += (saz - daz);
-    core->observer->pitch += (sal - dal);
-    core->observer->pitch = clamp(core->observer->pitch, -M_PI / 2, +M_PI / 2);
-
-    // Notify the changes.
-    module_changed(&core->observer->obj, "pitch");
-    module_changed(&core->observer->obj, "yaw");
+    obj_t *module;
+    DL_FOREACH(core->obj.children, module) {
+        if (module->klass->on_zoom) {
+            if (module->klass->on_zoom(module, k, x, y) == 0)
+                return;
+        };
+    }
 }
 
 double core_mag_to_illuminance(double vmag)
@@ -797,8 +778,9 @@ double core_mag_to_lum_apparent(double mag, double surf)
  */
 double core_get_apparent_angle_for_point(const projection_t *proj, double r)
 {
-    const double win_w = proj->window_size[0];
-    return r * proj->scaling[0] / win_w * 2;
+    const double win_h = proj->window_size[1];
+    const double scaling_y = proj_get_scaling_y(proj);
+    return r * scaling_y / win_h * 2;
 }
 
 /*
@@ -817,8 +799,9 @@ double core_get_apparent_angle_for_point(const projection_t *proj, double r)
 double core_get_point_for_apparent_angle(const projection_t *proj,
                                          double angle)
 {
-    const double win_w = proj->window_size[0];
-    return angle / proj->scaling[0] * win_w / 2;
+    const double win_h = proj->window_size[1];
+    const double scaling_y = proj_get_scaling_y(proj);
+    return angle / scaling_y * win_h / 2;
 }
 
 /*
