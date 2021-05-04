@@ -139,6 +139,10 @@ app.listen(port, () => {
   console.log(`SMT Server listening at http://localhost:${port}`)
 })
 
+app.get('/api/v1/branches', (req, res) => {
+  res.send({branches: DATA_GIT_BRANCHES})
+})
+
 app.get('/api/v1/:branch/status', (req, res) => {
   const branchData = BRANCH_DATA[req.params.branch]
   if (!branchData) {
