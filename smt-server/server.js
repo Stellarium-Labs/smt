@@ -212,7 +212,7 @@ await reSyncData()
 
 function reSyncPeriodic () {
   for (let b of DATA_GIT_BRANCHES) {
-    const branchData = BRANCH_DATA[branch]
+    const branchData = BRANCH_DATA[b]
     if (branchData.status !== 'ready') return
   }
   console.log('\n-- Periodic data check --')
