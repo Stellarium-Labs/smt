@@ -1,9 +1,13 @@
 # Changelog
 
+## [0.5.0] - 2021-05-05
+- Enable multiple git branches to be used on data server
+- Redirect HTTP -> HTTPS
+
 ## [0.4.1] - 2021-04-14
 - Fix bug when adding comma-separated constraints
 - Fix missing server info after data update
-- Core performance optimiozations
+- Core performance optimizations
 
 ## [0.4.0] - 2021-04-01
 - Large server code refactoring
