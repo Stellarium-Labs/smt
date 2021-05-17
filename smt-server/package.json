@@ -23,5 +23,8 @@
     "lodash": "^4.17.20",
     "nodegit": "^0.27.0",
     "workerpool": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=13.0"
   }
 }
