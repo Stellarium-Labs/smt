@@ -1,4 +1,4 @@
 data/*
-qe.db*
+qe-*.db*
 access_key*
 node_modules/*
