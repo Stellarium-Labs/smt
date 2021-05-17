@@ -30,7 +30,8 @@ export default {
   storeModule: storeModule,
   panelRoutes: [
     { path: '/p/smt/:branch', component: SmtLayerPage, meta: { tabName: 'Survey Tool', prio: 1 } },
-    { path: '/p/smt/', redirect: '/p/smt/main' }
+    { path: '/p/smt/', redirect: '/p/smt/main' },
+    { path: '/', redirect: '/p/smt/main' }
   ],
   onEngineReady: async function (app) {
     app.$store.commit('setValue', { varName: 'SMT.status', newValue: 'initializing' })
