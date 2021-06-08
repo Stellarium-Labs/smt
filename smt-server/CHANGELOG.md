@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.1] - 2021-06-08
+- Show ingestion logs in branch information
+- Geojson data ingestion is now more robust to issues in geojson
+- Add some redirects to default main branch to avoid broken URLs
+
 ## [0.5.0] - 2021-05-05
 - Enable multiple git branches to be used on data server
 - Redirect HTTP -> HTTPS
