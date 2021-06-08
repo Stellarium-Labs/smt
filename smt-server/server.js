@@ -130,7 +130,9 @@ for (let b of DATA_GIT_BRANCHES) {
     // Base hash key for this branche used to generate cache-friendly URLs
     BASE_HASH_KEY: '',
     // Global storage of hash -> query for later lookup
-    hashToQuery: {}
+    hashToQuery: {},
+    // Logs of the last ingestion
+    ingestionLogs: ''
   }
 }
 
@@ -168,6 +170,7 @@ const reSyncDataForBranch = async function (branch) {
   try {
     const dbServerInfo = QueryEngine.getDbExtraInfo(branchData.dbFileName)
     if (dbServerInfo && fs.existsSync('dontReloadGeojson')) {
+      console.log('Not reloading data because dontReloadGeojson file exists')
       reloadGeojson = false
     }
     if (dbServerInfo && dbServerInfo.baseHashKey === newServerInfo.baseHashKey) {

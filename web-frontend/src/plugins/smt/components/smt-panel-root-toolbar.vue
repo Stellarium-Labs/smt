@@ -22,11 +22,28 @@
         Displaying data coming from server: <b>{{ $store.state.SMT.smtServerInfo.dataGitServer }}</b><br>
         Git Branch: <b>{{ $store.state.SMT.smtServerInfo.dataGitBranch }}</b><br>
         Last ref: <b>{{ $store.state.SMT.smtServerInfo.dataGitSha1 }}</b><br>
-        Local Modifications: <b>{{ $store.state.SMT.smtServerInfo.dataLocalModifications }}</b>
+        Local Modifications: <b>{{ $store.state.SMT.smtServerInfo.dataLocalModifications }}</b><br>
+        Last ingestion logs: <v-btn icon class="transparent" @click="logsDialog = true"><v-icon>mdi-text</v-icon></v-btn>
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>
         <v-btn color="green darken-1" text @click="dialog = false">OK</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+  <v-dialog v-model="logsDialog" max-width="600">
+    <v-card>
+      <v-card-title class="text-h5">SMT Ingestion Logs</v-card-title>
+      <v-card-text>
+        <ul id="logs">
+          <li v-for="(item, index) in $store.state.SMT.smtServerInfo.ingestionLogs" :key="index">
+            <span v-html="cleanupLogEntry(item)"></span>
+          </li>
+        </ul>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="green darken-1" text @click="logsDialog = false">OK</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -43,10 +60,14 @@
 export default {
   data: function () {
     return {
-      dialog: false
+      dialog: false,
+      logsDialog: false
     }
   },
   methods: {
+    cleanupLogEntry: function (s) {
+      return s.replace(/(?:\r\n|\r|\n)/g, '<br>')
+    }
   },
   computed: {
   }

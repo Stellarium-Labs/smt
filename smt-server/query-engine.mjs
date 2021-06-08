@@ -726,7 +726,7 @@ export default class QueryEngine {
     // Initialize DB structure
 
     // Save config file and extra info inside the DB
-    db.prepare('CREATE TABLE smt_meta_data (smt_config TEXT, extra_info TEXT)').run()
+    db.prepare('CREATE TABLE smt_meta_data (smt_config TEXT, extra_info TEXT, ingestion_logs TEXT)').run()
     db.prepare('INSERT INTO smt_meta_data (smt_config, extra_info) VALUES (?, ?)').run(JSON.stringify(smtConfig), JSON.stringify(extraInfo))
 
     const sqlFieldsAndTypes = fieldsList.map(f => fId2SqlId(f.id) + ' ' + fType2SqlType(f.type)).join(', ')
@@ -750,11 +750,24 @@ export default class QueryEngine {
     // Ingest all geojson files listed in the smtConfig
     const pool = workerpool.pool('./worker.mjs')
     const allPromise = smtConfig.sources.map(url => pool.exec('ingestGeoJson', [dbFileName, dataDir + '/' + url]))
-    return Promise.all(allPromise).then(() => pool.terminate())
+    return Promise.all(allPromise).then((logs) => {
+      pool.terminate()
+      const db2 = new Database(dbFileName)
+      // Add ingestion logs into the DB
+      extraInfo.ingestionLogs = logs
+      db2.prepare('UPDATE smt_meta_data SET extra_info = ?').run(JSON.stringify(extraInfo))
+      db2.close()
+    })
   }
 
   // Ingest geojson file fileName into the database at dbFileName
   static ingestGeoJson (dbFileName, fileName) {
+    let logAcc = ''
+    const ingestLog = function (s) {
+      logAcc += s + '\n'
+      console.log(s)
+    }
+
     const jsonData = JSON.parse(fs.readFileSync(fileName))
     const db = new Database(dbFileName, { fileMustExist: true, timeout: 3600000 }) // 1h timeout
 
@@ -777,71 +790,77 @@ export default class QueryEngine {
     if (quickTestMode) {
       jsonData.features = jsonData.features.slice(0, 100)
     }
-    console.log('Loading ' + jsonData.features.length + ' features' + (quickTestMode ? ' (quick test mode)' : ''))
+    ingestLog('Loading ' + jsonData.features.length + ' features from ' + fileName + (quickTestMode ? ' (quick test mode)' : ''))
     geo_utils.normalizeGeoJson(jsonData)
 
     // Insert all data
     const allFeatures = []
-    turf.featureEach(jsonData, function (feature, featureIndex) {
-      if (feature.geometry.type === 'MultiPolygon') {
-        geo_utils.unionMergeMultiPolygon(feature)
-      }
-      feature.geogroup_id = _.get(feature, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
-
-      // Prepare all values to insert in SQL DB
-      const sqlValues = {}
-      for (let i = 0; i < fieldsList.length; ++i) {
-        const field = fieldsList[i]
-        let d
-        if (field.computed_compiled) {
-          d = field.computed_compiled(feature.properties)
-          if (isNaN(d)) d = undefined
-        } else {
-          d = _.get(feature.properties, field.id, undefined)
-          if (d !== undefined && field.type === 'date') {
-            d = new Date(d).getTime()
-          }
+    try {
+      turf.featureEach(jsonData, function (feature, featureIndex) {
+        if (feature.geometry.type === 'MultiPolygon') {
+          geo_utils.unionMergeMultiPolygon(feature)
         }
-        sqlValues[sqlFields[i]] = d
-      }
+        feature.geogroup_id = _.get(feature, 'FieldID', undefined) || _.get(feature.properties, 'TelescopeName', '') + _.get(feature, 'id', '')
 
-      const origProperties = feature.properties
-      feature.properties = undefined
-      turf.truncate(feature, {precision: 6, coordinates: 2, mutate: true})
-      const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
-      let area = 0
-      for (let j = 0; j < newSubs.length; ++j) {
-        const subF = newSubs[j]
-        assert(subF.geometry)
-        const rotationMats = geo_utils.getHealpixRotationMats(HEALPIX_ORDER, subF.healpix_index)
-        const subFrot = _.cloneDeep(subF)
-        geo_utils.rotateGeojsonFeature(subFrot, rotationMats.m)
-        subF.area = geo_utils.featureArea(subFrot)
-        area += subF.area
-        turf.truncate(subF, {precision: 6, coordinates: 2, mutate: true})
-        subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
-        turf.truncate(subFrot, {precision: 6, coordinates: 2, mutate: true})
-        subF.geometry_rot = '__JSON' + JSON.stringify(subFrot.geometry)
-        subF.geogroup_id = feature.geogroup_id
-        _.assign(subF, sqlValues)
-      }
-      feature.properties = origProperties
-      const bCap = geo_utils.featureBoundingCap(feature)
+        // Prepare all values to insert in SQL DB
+        const sqlValues = {}
+        for (let i = 0; i < fieldsList.length; ++i) {
+          const field = fieldsList[i]
+          let d
+          if (field.computed_compiled) {
+            d = field.computed_compiled(feature.properties)
+            if (isNaN(d)) d = undefined
+          } else {
+            d = _.get(feature.properties, field.id, undefined)
+            if (d !== undefined && field.type === 'date') {
+              d = new Date(d).getTime()
+            }
+          }
+          sqlValues[sqlFields[i]] = d
+        }
 
-      const f = {
-        geogroup_id: feature.geogroup_id,
-        properties: '__JSON' + JSON.stringify(feature.properties),
-        geometry: '__JSON' + JSON.stringify(feature.geometry),
-        area: area,
-        geocap_x: bCap[0],
-        geocap_y: bCap[1],
-        geocap_z: bCap[2],
-        geocap_cosa: bCap[3]
-      }
-      _.assign(f, sqlValues)
+        const origProperties = feature.properties
+        feature.properties = undefined
+        turf.truncate(feature, {precision: 6, coordinates: 2, mutate: true})
+        const newSubs = geo_utils.splitOnHealpixGrid(feature, HEALPIX_ORDER)
+        let area = 0
+        for (let j = 0; j < newSubs.length; ++j) {
+          const subF = newSubs[j]
+          assert(subF.geometry)
+          const rotationMats = geo_utils.getHealpixRotationMats(HEALPIX_ORDER, subF.healpix_index)
+          const subFrot = _.cloneDeep(subF)
+          geo_utils.rotateGeojsonFeature(subFrot, rotationMats.m)
+          subF.area = geo_utils.featureArea(subFrot)
+          area += subF.area
+          turf.truncate(subF, {precision: 6, coordinates: 2, mutate: true})
+          subF.geometry = '__JSON' + JSON.stringify(subF.geometry)
+          turf.truncate(subFrot, {precision: 6, coordinates: 2, mutate: true})
+          subF.geometry_rot = '__JSON' + JSON.stringify(subFrot.geometry)
+          subF.geogroup_id = feature.geogroup_id
+          _.assign(subF, sqlValues)
+        }
+        feature.properties = origProperties
+        const bCap = geo_utils.featureBoundingCap(feature)
 
-      allFeatures.push([f, newSubs])
-    })
+        const f = {
+          geogroup_id: feature.geogroup_id,
+          properties: '__JSON' + JSON.stringify(feature.properties),
+          geometry: '__JSON' + JSON.stringify(feature.geometry),
+          area: area,
+          geocap_x: bCap[0],
+          geocap_y: bCap[1],
+          geocap_z: bCap[2],
+          geocap_cosa: bCap[3]
+        }
+        _.assign(f, sqlValues)
+
+        allFeatures.push([f, newSubs])
+      })
+    } catch (err) {
+      ingestLog('Error while processing entry from file ' + fileName)
+      ingestLog(err)
+      ingestLog('Skipping file.')
+    }
 
     // Prepare SQL insertion commands
     const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @geocap_x, @geocap_y, @geocap_z, @geocap_cosa, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
@@ -853,7 +872,16 @@ export default class QueryEngine {
         const subFs = allF[i][1]
         // Insert one feature and get the unique rowid to assign it to the
         // id field of the subfeatures
-        const info = insertOne.run(f)
+        let info
+        try {
+          info = insertOne.run(f)
+        } catch (err) {
+          ingestLog('Error while inserting entry from file ' + fileName + ' in DB:')
+          ingestLog(err)
+          ingestLog('Skipping entry:')
+          ingestLog(JSON.stringify(f, null, 2))
+          continue
+        }
         for (const subF of subFs) {
           subF.id = info.lastInsertRowid
           insertSub.run(subF)
@@ -862,6 +890,7 @@ export default class QueryEngine {
     })
     insertMany(allFeatures)
     db.close()
+    return logAcc
   }
 
   static deinit () {

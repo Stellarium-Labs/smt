@@ -20,7 +20,8 @@ const moduleStore = {
       version: '',
       dataGitServer: '',
       dataGitBranch: '',
-      dataGitSha1: ''
+      dataGitSha1: '',
+      ingestionLogs: ''
     }
   },
   mutations: {
