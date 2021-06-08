@@ -187,7 +187,7 @@ const reSyncDataForBranch = async function (branch) {
 
   console.log('Data or code has changed since last start: reload geojson')
   branchData.status = 'loading data'
-  await QueryEngine.generateDb(__dirname + '/data/', branchData.dbFileName + '-tmp', newServerInfo)
+  await QueryEngine.generateDb(__dirname + '/data', branchData.dbFileName + '-tmp', newServerInfo)
 
   // Replace production DB
   // Stop running queries if any
