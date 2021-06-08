@@ -21,6 +21,7 @@ typedef struct obj obj_t;
 typedef struct observer observer_t;
 typedef struct painter painter_t;
 typedef struct point point_t;
+typedef struct point_3d point_3d_t;
 typedef struct texture texture_t;
 typedef struct renderer renderer_t;
 
@@ -75,6 +76,14 @@ struct point
     obj_t   *obj;
 };
 
+struct point_3d
+{
+    double  pos[3];     // View position
+    double  size;       // Radius in window pixel (pixel with density scale).
+    uint8_t color[4];
+    obj_t   *obj;
+};
+
 // Painter flags
 enum {
     PAINTER_ADD                 = 1 << 0, // Use addition blending.
@@ -120,7 +129,6 @@ struct painter
 
     // Point halo / core ratio (zero for no halo).
     double          points_halo;
-    double          (*depth_range)[2]; // If set use depth test.
 
     struct {
         int type;
@@ -208,6 +216,8 @@ void painter_set_texture(painter_t *painter, int slot, texture_t *tex,
  */
 int paint_2d_points(const painter_t *painter, int n, const point_t *points);
 
+int paint_3d_points(const painter_t *painter, int n, const point_3d_t *points);
+
 /*
  * Function: paint_quad
  *
@@ -267,9 +277,9 @@ int paint_tile_contour(const painter_t *painter, int frame,
  *                parametric function.  If set then the actual coordinates
  *                of the lines are the mapping of the point through this
  *                function.
- *   split      - How much do we want to split the lines for smooth rendering.
- *                If set to zero, the lines are split using an adaptive
- *                algorithm.
+ *   split      - Number of segments requested in the output.  If < 0 use
+ *                an adaptive algorithm, where -split is the minimum level
+ *                of split.  In that case -split = log2(min number of points).
  *   flags      - Supported flags:
  *                  PAINTER_SKIP_DISCONTINUOUS - if set, any line that
  *                  intersects a discontinuity is ignored.

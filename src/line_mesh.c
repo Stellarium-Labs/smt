@@ -14,6 +14,31 @@
 #include <float.h>
 #include <stdlib.h>
 
+// Test if a shape in clipping coordinates is clipped or not.
+static bool is_clipped(int n, double (*pos)[4])
+{
+    // The six planes equations:
+    const int P[6][4] = {
+        {-1, 0, 0, -1}, {1, 0, 0, -1},
+        {0, -1, 0, -1}, {0, 1, 0, -1},
+        {0, 0, -1, -1}, {0, 0, 1, -1}
+    };
+    int i, p;
+    for (p = 0; p < 6; p++) {
+        for (i = 0; i < n; i++) {
+            if (    P[p][0] * pos[i][0] +
+                    P[p][1] * pos[i][1] +
+                    P[p][2] * pos[i][2] +
+                    P[p][3] * pos[i][3] <= 0) {
+                break;
+            }
+        }
+        if (i == n) // All the points are outside a clipping plane.
+            return true;
+    }
+    return false;
+}
+
 static void line_get_normal(const double (*line)[3], int size, int i,
                             double n[2])
 {
@@ -90,7 +115,7 @@ static double line_point_dist(const double a[2], const double b[2],
     double ap[2], u[2];
     vec2_sub(p, a, ap);
     vec2_sub(b, a, u);
-    return vec2_cross(ap, u) / vec2_norm(u);
+    return fabs(vec2_cross(ap, u)) / vec2_norm(u);
 }
 
 static void line_push_point(double (**pos)[3], double (**win)[3],
@@ -107,35 +132,60 @@ static void line_push_point(double (**pos)[3], double (**win)[3],
     (*size)++;
 }
 
+static void clip_to_win(const projection_t *proj,
+                        const double pos[4], double out[3])
+{
+    double p[4];
+    vec4_copy(pos, p);
+    vec3_mul(1.0 / p[3], p, p);
+    out[0] = (+p[0] + 1) / 2 * proj->window_size[0];
+    out[1] = (-p[1] + 1) / 2 * proj->window_size[1];
+    out[2] = (p[2] + 1) / 2;
+}
+
 static void line_tesselate_(void (*func)(void *user, double t, double pos[3]),
                             const projection_t *proj,
                             void *user, double t0, double t1,
                             double (**out_pos)[3],
                             double (**out_win)[3],
-                            int level, int *size, int *allocated)
+                            int level, int min_level,
+                            int *size, int *allocated)
 {
-    double p0[3], p1[3], pm[3], w0[3], w1[3], wm[3], tm;
-    const double max_dist = 1.0;
-    const int max_level = 4;
+    double p0[3], p1[3], pm[3], c[3][4], w0[3], w1[3], wm[3], tm;
+    double max_dist = 0.5;
+    const int max_level = 5 + min_level;
+    bool clipped;
+
     tm = (t0 + t1) / 2;
+
+    if (level < min_level) goto split;
 
     func(user, t0, p0);
     func(user, t1, p1);
     func(user, tm, pm);
 
-    project_to_win(proj, p0, w0);
-    project_to_win(proj, p1, w1);
-    project_to_win(proj, pm, wm);
+    project_to_clip(proj, p0, c[0]);
+    project_to_clip(proj, p1, c[1]);
+    project_to_clip(proj, pm, c[2]);
 
-    if (level > max_level || line_point_dist(w0, w1, wm) < max_dist) {
+    clipped = is_clipped(3, c);
+
+    clip_to_win(proj, c[0], w0);
+    clip_to_win(proj, c[1], w1);
+    clip_to_win(proj, c[2], wm);
+
+    if (    clipped || level > max_level ||
+            line_point_dist(w0, w1, wm) < max_dist)
+    {
         line_push_point(out_pos, out_win, p1, w1, size, allocated);
         return;
     }
 
+split:
     line_tesselate_(func, proj, user, t0, tm, out_pos, out_win, level + 1,
-                    size, allocated);
+                    min_level, size, allocated);
     line_tesselate_(func, proj, user, tm, t1, out_pos, out_win, level + 1,
-                    size, allocated);
+                    min_level, size, allocated);
 }
 
 
@@ -145,12 +195,12 @@ int line_tesselate(void (*func)(void *user, double t, double pos[3]),
                    double (**out_pos)[3],
                    double (**out_win)[3])
 {
-    int i, allocated = 0, size = 0;
+    int i, allocated = 0, size = 0, min_level;
     double pos[3], win[3];
     *out_pos = NULL;
     *out_win = NULL;
 
-    if (split) {
+    if (split > 0) {
         size = split + 1;
         *out_pos = calloc(size, sizeof(**out_pos));
         *out_win = calloc(size, sizeof(**out_win));
@@ -161,11 +211,12 @@ int line_tesselate(void (*func)(void *user, double t, double pos[3]),
             vec3_copy(win, (*out_win)[i]);
         }
     } else {
+        min_level = -split;
         func(user, 0, pos);
         project_to_win(proj, pos, win);
         line_push_point(out_pos, out_win, pos, win, &size, &allocated);
         line_tesselate_(func, proj, user, 0, 1, out_pos, out_win, 0,
-                        &size, &allocated);
+                        min_level, &size, &allocated);
     }
     return size;
 }

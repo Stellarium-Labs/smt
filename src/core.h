@@ -23,6 +23,7 @@
 #include "tonemapper.h"
 
 #include "utils/fps.h"
+#include "utils/fader.h"
 
 #define CORE_MIN_FOV (1./3600 * DD2R)
 
@@ -92,6 +93,8 @@ struct core
     bool            flip_view_horizontal;
     double          y_offset; // Rendering view Y offset (in windows unit).
 
+    bool            hide_selection_label; // Used by the labels module.
+
     renderer_t      *rend;
     int             proj;
     double          win_size[2];
@@ -104,7 +107,6 @@ struct core
     // Number of clicks so far.  This is just so that we can wait for clicks
     // from the ui.
     int clicks;
-    bool ignore_clicks; // Don't select on click.
 
     struct {
         struct {

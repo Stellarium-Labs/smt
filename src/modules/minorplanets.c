@@ -266,12 +266,16 @@ static int mplanet_get_info(const obj_t *obj, const observer_t *obs, int info,
     return 1;
 }
 
-static int render_3d_model(const mplanet_t *mplanet, const painter_t *painter)
+static int render_3d_model(const mplanet_t *mplanet, const painter_t *painter_)
 {
+    painter_t painter = *painter_;
     double model_mat[4][4] = MAT4_IDENTITY;
+
+    painter.flags |= PAINTER_ENABLE_DEPTH;
     mat4_itranslate(model_mat, VEC3_SPLIT(mplanet->pvo[0]));
+
     mat4_iscale(model_mat, 1000 * DM2AU, 1000 * DM2AU, 1000 * DM2AU);
-    paint_3d_model(painter, mplanet->model, model_mat, NULL);
+    paint_3d_model(&painter, mplanet->model, model_mat, NULL);
     return 0;
 }
 
@@ -285,7 +289,7 @@ static int mplanet_render(const obj_t *obj, const painter_t *painter)
     const bool selected = core->selection && obj == core->selection;
     double hints_mag_offset = g_mplanets->hints_mag_offset;
     double radius_m, model_r, model_size, bounds[2][3], model_alpha = 0;
-    double radius, cap[4];
+    double max_radius, radius, cap[4];
 
     mplanet_update(mplanet, painter->obs);
     vmag = mplanet->vmag;
@@ -303,8 +307,12 @@ static int mplanet_render(const obj_t *obj, const painter_t *painter)
     painter_project(painter, FRAME_ICRF, pvo[0], false, false, win_pos);
     core_get_point_for_mag(vmag, &size, &luminance);
 
+    // Max possible model radius (using Ceres radius).
+    max_radius = core_get_point_for_apparent_angle(painter->proj,
+            500000 * DM2AU / vec3_norm(pvo[0]));
+
     // Render 3d model if possible.
-    if ((size > 5) &&
+    if ((max_radius > size) &&
         painter_get_3d_model_bounds(painter, mplanet->model, bounds) == 0)
     {
         radius_m = mean3(bounds[1][0] - bounds[0][0],
@@ -313,7 +321,7 @@ static int mplanet_render(const obj_t *obj, const painter_t *painter)
         model_r = radius_m * DM2AU / vec3_norm(mplanet->pvo[0]);
         model_size = core_get_point_for_apparent_angle(
                 painter->proj, model_r);
-        model_alpha = smoothstep(0.5, 1.0, model_size / size);
+        model_alpha = smoothstep(0.5, 1.0, size ? model_size / size : 1);
         if (model_alpha > 0)
             render_3d_model(mplanet, painter);
     }

@@ -435,7 +435,7 @@ static void render_label(const double p[2], const double u[2],
     const double text_size = 12;
     painter_t painter = *painter_;
 
-    painter.color[3] = 1;
+    painter.color[3] = line->visible.value;
     vec2_normalize(u, n);
 
     // Give up if angle with screen is too acute.
@@ -804,6 +804,7 @@ static obj_klass_t line_klass = {
     .render = line_render,
     .attributes = (attribute_t[]) {
         PROPERTY(visible, TYPE_BOOL, MEMBER(line_t, visible.target)),
+        PROPERTY(color, TYPE_V4, MEMBER(line_t, color)),
         {}
     },
 };

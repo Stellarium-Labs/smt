@@ -133,6 +133,8 @@ enum {
     TITAN = 606,
     HYPERION = 607,
     IAPETUS = 608,
+    ATLAS = 615,
+    PAN = 618,
     SATURN = 699,
 
     ARIEL = 701,
@@ -902,7 +904,7 @@ static void planet_render_model(const planet_t *planet,
     const hips_t *hips;
     double bounds[2][3], pvo[2][3];
     double model_mat[4][4] = MAT4_IDENTITY;
-    double dist, depth_range[2];
+    double dist;
     double radius = planet->radius_m * DM2AU; // Radius in AU.
     painter_t painter = *painter_;
 
@@ -925,12 +927,6 @@ static void planet_render_model(const planet_t *planet,
             planet_render_hips(planet, hips, r_scale, alpha, &painter);
         return;
     }
-
-    // Set the min required depth range needed.
-    // XXX: could be computed properly.
-    depth_range[0] = dist * 0.5;
-    depth_range[1] = dist * 2;
-    painter.depth_range = &depth_range;
 
     // Assume the model is in km.
     mat4_itranslate(model_mat, VEC3_SPLIT(pvo[0]));
@@ -974,7 +970,6 @@ static void planet_render_orbit(const planet_t *planet,
 {
     painter_t painter = *painter_;
     double mat[4][4] = MAT4_IDENTITY, parent_pvo[2][3];
-    double dist, depth_range[2];
     double in, om, w, a, n, ec, ma;
 
     if (planet->color[3]) vec3_copy(planet->color, painter.color);
@@ -986,12 +981,6 @@ static void planet_render_orbit(const planet_t *planet,
     // Center the rendering on the parent planet.
     planet_get_pvo(planet->parent, painter.obs, parent_pvo);
     mat4_itranslate(mat, parent_pvo[0][0], parent_pvo[0][1], parent_pvo[0][2]);
-
-    // Set the depth range same as the parent!!!!
-    dist = vec3_norm(parent_pvo[0]);
-    depth_range[0] = dist * 0.5;
-    depth_range[1] = dist * 2;
-    painter.depth_range = &depth_range;
 
     painter.lines.width = 1;
     paint_orbit(&painter, FRAME_ICRF, mat, painter.obs->tt,
@@ -1022,6 +1011,7 @@ static void planet_render_label(
     radius = asin(planet->radius_m * DM2AU / vec3_norm(pvo[0]));
     radius = core_get_point_for_apparent_angle(painter->proj, radius);
     radius *= scale;
+    radius *= 1.05; // Compensate for projection distortion.
 
     s = point_size * 0.9;
     s = max(s, radius);
@@ -1053,9 +1043,32 @@ static double get_artificial_scale(const planets_t *planets,
     return max(1.0, scale);
 }
 
+/*
+* Heuristic to decide if we should render the orbit of a planet.
+*/
+static bool should_render_orbit(const planet_t *p, const painter_t *painter)
+{
+    switch (g_planets->orbits_mode) {
+    case 0:
+        return false;
+    case 1:
+        if (!core->selection) return false;
+        if (&p->parent->obj != core->selection) return false;
+        switch (p->id) {
+            case ATLAS:
+            case PAN:
+                return false;
+            default:
+                return true;
+        }
+    default:
+        return false;
+    }
+}
+
 static void planet_render(const planet_t *planet, const painter_t *painter_)
 {
-    double pos[4], p_win[4];
+    double pos[4], p_view[3], p_win[4];
     double color[4];
     double vmag;             // Observed magnitude.
     double point_size;       // Radius size of point (pixel).
@@ -1067,7 +1080,7 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     double diam;                // Angular diameter (rad).
     double model_alpha = 0;
     painter_t painter = *painter_;
-    point_t point;
+    point_3d_t point;
     double model_k = 2.0; // How soon we switch to the 3d model.
     planets_t *planets = (planets_t*)planet->obj.parent;
     bool selected = core->selection && &planet->obj == core->selection;
@@ -1075,11 +1088,16 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     bool has_model;
     double pvo[2][3], dir[3];
     double phy_angular_radius;
+    bool orbit_visible;
 
     if (!painter.obs->space && planet->id == EARTH) return;
 
     vmag = planet_get_vmag(planet, painter.obs);
-    if (planet->id != MOON && vmag > painter.stars_limit_mag) return;
+    orbit_visible = should_render_orbit(planet, &painter);
+
+    if (    planet->id != MOON && !orbit_visible &&
+            vmag > painter.stars_limit_mag)
+        return;
 
     // Artificially increase the moon size when we are zoomed out, so that
     // we can render it as a hips survey.
@@ -1111,11 +1129,11 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     diam = 2.0 * planet->radius_m * DM2AU / dist;
 
     // Project planet's center
-    convert_frame(painter.obs, FRAME_ICRF, FRAME_VIEW, true, dir, pos);
-    project_to_win(painter.proj, pos, p_win);
+    convert_frame(painter.obs, FRAME_ICRF, FRAME_VIEW, false, pvo[0], p_view);
+    project_to_win(painter.proj, p_view, p_win);
 
     // At least 1 px of the planet is visible, report it for tonemapping
-    convert_frame(painter.obs, FRAME_VIEW, FRAME_OBSERVED, true, pos, pos);
+    convert_frame(painter.obs, FRAME_VIEW, FRAME_OBSERVED, false, p_view, pos);
     // Exclude the sun because it is already taken into account by the
     // atmosphere luminance feedack
     if (planet->id != SUN) {
@@ -1147,14 +1165,15 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     // (Mostly for the Sun, but also affect planets at large fov).
     painter.points_halo *= mix(1.0, 0.25,
                                smoothstep(0.5, 3.0, point_r * DR2D));
-    point = (point_t) {
-        .pos = {p_win[0], p_win[1]},
+    point = (point_3d_t) {
+        .pos = {p_view[0], p_view[1], p_view[2]},
         .size = point_size,
         .color = {color[0] * 255, color[1] * 255, color[2] * 255,
                   color[3] * 255},
         .obj = &planet->obj,
     };
-    paint_2d_points(&painter, 1, &point);
+    painter.flags |= PAINTER_ENABLE_DEPTH;
+    paint_3d_points(&painter, 1, &point);
 
     if (model_alpha > 0) {
         planet_render_model(planet, r_scale, model_alpha, &painter);
@@ -1167,7 +1186,7 @@ static void planet_render(const planet_t *planet, const painter_t *painter_)
     // XXX: cleanup this line.
     if (selected || (planets->hints_visible && (
         vmag <= painter.hints_limit_mag + 2.4 + planets->hints_mag_offset ||
-        model_alpha > 0)))
+        model_alpha > 0 || orbit_visible)))
     {
         planet_render_label(planet, &painter, vmag, r_scale, point_size);
     }
@@ -1192,24 +1211,6 @@ static int sort_cmp(const obj_t *a, const obj_t *b)
     planet_get_pvo(pa, obs, apvo);
     planet_get_pvo(pb, obs, bpvo);
     return cmp(eraPm(bpvo[0]), eraPm(apvo[0]));
-}
-
-
-/*
-* Heuristic to decide if we should render the orbit of a planet.
-*/
-static bool should_render_orbit(const planet_t *p, const painter_t *painter)
-{
-    switch (g_planets->orbits_mode) {
-    case 0:
-        return false;
-    case 1:
-        if (!core->selection) return false;
-        if (&p->parent->obj != core->selection) return false;
-        return true;
-    default:
-        return false;
-    }
 }
 
 static int planets_render(const obj_t *obj, const painter_t *painter)
