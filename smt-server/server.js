@@ -97,7 +97,7 @@ const syncGitData = async function (gitServer, gitBranch) {
   const ref = await repo.getBranch('refs/remotes/origin/' + gitBranch)
   // Use 'force' strategy because if one more NodeGit library strange issue
   // causing conflict errors while doing checkouts
-  await repo.checkoutRef(ref, { checkoutStrategy: NodeGit.Checkout.FORCE })
+  await repo.checkoutRef(ref, { checkoutStrategy: NodeGit.Checkout.STRATEGY.FORCE })
   const commit = await repo.getHeadCommit()
   const statuses = await repo.getStatus()
   const ret = {}
