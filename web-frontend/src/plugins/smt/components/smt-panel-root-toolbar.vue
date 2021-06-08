@@ -23,7 +23,7 @@
         Git Branch: <b>{{ $store.state.SMT.smtServerInfo.dataGitBranch }}</b><br>
         Last ref: <b>{{ $store.state.SMT.smtServerInfo.dataGitSha1 }}</b><br>
         Local Modifications: <b>{{ $store.state.SMT.smtServerInfo.dataLocalModifications }}</b><br>
-        Last ingestion logs: <v-btn icon class="transparent" @click="logsDialog = true"><v-icon>mdi-text</v-icon></v-btn>
+        Last ingestion logs: <v-btn icon class="transparent" @click="dialog = false; logsDialog = true"><v-icon>mdi-text</v-icon></v-btn>
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>
@@ -31,7 +31,7 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
-  <v-dialog v-model="logsDialog" max-width="600">
+  <v-dialog v-model="logsDialog" max-width="1000">
     <v-card>
       <v-card-title class="text-h5">SMT Ingestion Logs</v-card-title>
       <v-card-text>
