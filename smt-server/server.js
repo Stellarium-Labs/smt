@@ -95,7 +95,9 @@ const syncGitData = async function (gitServer, gitBranch) {
   await repo.fetchAll(cloneOptions.fetchOpts)
   console.log('Getting to last commit on branch ' + gitBranch)
   const ref = await repo.getBranch('refs/remotes/origin/' + gitBranch)
-  await repo.checkoutRef(ref)
+  // Use 'force' strategy because if one more NodeGit library strange issue
+  // causing conflict errors while doing checkouts
+  await repo.checkoutRef(ref, { checkoutStrategy: NodeGit.Checkout.FORCE })
   const commit = await repo.getHeadCommit()
   const statuses = await repo.getStatus()
   const ret = {}
