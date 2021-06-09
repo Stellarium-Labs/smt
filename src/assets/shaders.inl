@@ -174,7 +174,7 @@ static const unsigned char DATA_shaders_blit_glsl[984] __attribute__((aligned(4)
 
 ASSET_REGISTER(shaders_blit_glsl, "shaders/blit.glsl", DATA_shaders_blit_glsl, false)
 
-static const unsigned char DATA_shaders_fog_glsl[812] __attribute__((aligned(4))) =
+static const unsigned char DATA_shaders_fog_glsl[855] __attribute__((aligned(4))) =
     "/* Stellarium Web Engine - Copyright (c) 2018 - Noctua Software Ltd\n"
     " *\n"
     " * This program is licensed under the terms of the GNU AGPL v3, or\n"
@@ -187,6 +187,8 @@ static const unsigned char DATA_shaders_fog_glsl[812] __attribute__((aligned(4))
     "#ifdef GL_ES\n"
     "precision mediump float;\n"
     "#endif\n"
+    "\n"
+    "uniform lowp    vec4        u_color;\n"
     "\n"
     "varying lowp    vec4        v_color;\n"
     "\n"
@@ -203,7 +205,8 @@ static const unsigned char DATA_shaders_fog_glsl[812] __attribute__((aligned(4))
     "    const lowp float height = 0.2;\n"
     "    const lowp float alpha = 0.15;\n"
     "    lowp float d = smoothstep(height, 0.0, abs(a_sky_pos.z));\n"
-    "    v_color = vec4(1.0, 1.0, 1.0, alpha * d);\n"
+    "    v_color = u_color;\n"
+    "    v_color.a *= alpha * d;\n"
     "}\n"
     "\n"
     "#endif\n"
@@ -338,7 +341,7 @@ static const unsigned char DATA_shaders_mesh_glsl[588] __attribute__((aligned(4)
 
 ASSET_REGISTER(shaders_mesh_glsl, "shaders/mesh.glsl", DATA_shaders_mesh_glsl, false)
 
-static const unsigned char DATA_shaders_planet_glsl[7270] __attribute__((aligned(4))) =
+static const unsigned char DATA_shaders_planet_glsl[7260] __attribute__((aligned(4))) =
     "/* Stellarium Web Engine - Copyright (c) 2018 - Noctua Software Ltd\n"
     " *\n"
     " * This program is licensed under the terms of the GNU AGPL v3, or\n"
@@ -541,8 +544,7 @@ static const unsigned char DATA_shaders_planet_glsl[7270] __attribute__((aligned
     "    } else if (u_material == 1) { // basic\n"
     "        float light = max(0.0, dot(n, light_dir));\n"
     "        light = max(light, u_min_brightness);\n"
-    "        color *= light;\n"
-    "        color += u_light_emit;\n"
+    "        color *= vec3(light) + u_light_emit;\n"
     "\n"
     "    } else if (u_material == 2) { // ring\n"
     "        lowp float illu = illumination(v_mpos);\n"
