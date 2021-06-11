@@ -768,34 +768,35 @@ export default class QueryEngine {
       console.log(s)
     }
 
-    const jsonData = JSON.parse(fs.readFileSync(fileName))
-    const db = new Database(dbFileName, { fileMustExist: true, timeout: 3600000 }) // 1h timeout
-
-    const smtConfig = JSON.parse(db.prepare('SELECT smt_config from smt_meta_data').get().smt_config)
-    const fieldsList = _.cloneDeep(smtConfig.fields)
-    const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
-
-    // Compile filtrex expressions used for creating generated fields
-    for (let i in fieldsList) {
-      if (fieldsList[i].computed) {
-        const options = {
-          extraFunctions: { date2unix: function (dstr) { return new Date(dstr).getTime() } },
-          customProp: (path, unused, obj) => _.get(obj, path, undefined)
-        }
-        fieldsList[i].computed_compiled = filtrex.compileExpression(fieldsList[i].computed, options)
-      }
-    }
-
-    const quickTestMode = process.env.SMT_QUICK_TEST
-    if (quickTestMode) {
-      jsonData.features = jsonData.features.slice(0, 100)
-    }
-    ingestLog('Loading ' + jsonData.features.length + ' features from ' + fileName + (quickTestMode ? ' (quick test mode)' : ''))
-    geo_utils.normalizeGeoJson(jsonData)
-
-    // Insert all data
-    const allFeatures = []
     try {
+      const jsonData = JSON.parse(fs.readFileSync(fileName))
+      const db = new Database(dbFileName, { fileMustExist: true, timeout: 3600000 }) // 1h timeout
+
+      const smtConfig = JSON.parse(db.prepare('SELECT smt_config from smt_meta_data').get().smt_config)
+      const fieldsList = _.cloneDeep(smtConfig.fields)
+      const sqlFields = fieldsList.map(f => fId2SqlId(f.id))
+
+      // Compile filtrex expressions used for creating generated fields
+      for (let i in fieldsList) {
+        if (fieldsList[i].computed) {
+          const options = {
+            extraFunctions: { date2unix: function (dstr) { return new Date(dstr).getTime() } },
+            customProp: (path, unused, obj) => _.get(obj, path, undefined)
+          }
+          fieldsList[i].computed_compiled = filtrex.compileExpression(fieldsList[i].computed, options)
+        }
+      }
+
+      const quickTestMode = process.env.SMT_QUICK_TEST
+      if (quickTestMode) {
+        jsonData.features = jsonData.features.slice(0, 100)
+      }
+      ingestLog('Loading ' + jsonData.features.length + ' features from ' + fileName + (quickTestMode ? ' (quick test mode)' : ''))
+      geo_utils.normalizeGeoJson(jsonData)
+
+      // Insert all data
+      const allFeatures = []
+
       turf.featureEach(jsonData, function (feature, featureIndex) {
         if (feature.geometry.type === 'MultiPolygon') {
           geo_utils.unionMergeMultiPolygon(feature)
@@ -856,40 +857,40 @@ export default class QueryEngine {
 
         allFeatures.push([f, newSubs])
       })
+
+      // Prepare SQL insertion commands
+      const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @geocap_x, @geocap_y, @geocap_z, @geocap_cosa, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+      const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @geometry_rot, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
+      // Perform SQL transaction
+      const insertMany = db.transaction(function (allF) {
+        for (const i in allF) {
+          const f = allF[i][0]
+          const subFs = allF[i][1]
+          // Insert one feature and get the unique rowid to assign it to the
+          // id field of the subfeatures
+          let info
+          try {
+            info = insertOne.run(f)
+          } catch (err) {
+            ingestLog('Error while inserting entry from file ' + fileName + ' in DB:')
+            ingestLog(err)
+            ingestLog('Skipping entry:')
+            ingestLog(JSON.stringify(f, null, 2))
+            continue
+          }
+          for (const subF of subFs) {
+            subF.id = info.lastInsertRowid
+            insertSub.run(subF)
+          }
+        }
+      })
+      insertMany(allFeatures)
+      db.close()
     } catch (err) {
       ingestLog('Error while processing entry from file ' + fileName)
       ingestLog(err)
       ingestLog('Skipping file.')
     }
-
-    // Prepare SQL insertion commands
-    const insertOne = db.prepare('INSERT INTO features VALUES (@geometry, @geogroup_id, @area, @geocap_x, @geocap_y, @geocap_z, @geocap_cosa, @properties, ' + sqlFields.map(f => '@' + f).join(',') + ')')
-    const insertSub = db.prepare('INSERT INTO subfeatures VALUES (@id, @geometry, @geometry_rot, @healpix_index, @geogroup_id, @area, ' + sqlFields.map(f => '@' + f).join(',') + ')')
-    // Perform SQL transaction
-    const insertMany = db.transaction(function (allF) {
-      for (const i in allF) {
-        const f = allF[i][0]
-        const subFs = allF[i][1]
-        // Insert one feature and get the unique rowid to assign it to the
-        // id field of the subfeatures
-        let info
-        try {
-          info = insertOne.run(f)
-        } catch (err) {
-          ingestLog('Error while inserting entry from file ' + fileName + ' in DB:')
-          ingestLog(err)
-          ingestLog('Skipping entry:')
-          ingestLog(JSON.stringify(f, null, 2))
-          continue
-        }
-        for (const subF of subFs) {
-          subF.id = info.lastInsertRowid
-          insertSub.run(subF)
-        }
-      }
-    })
-    insertMany(allFeatures)
-    db.close()
     return logAcc
   }
 
