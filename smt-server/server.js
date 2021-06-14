@@ -21,7 +21,7 @@ import hash_sum from 'hash-sum'
 
 const SMT_VERSION = process.env.npm_package_version || 'dev'
 const DATA_GIT_SERVER = 'git@github.com:Stellarium-Labs/smt-data.git'
-const DATA_GIT_BRANCHES = ['main', 'reprocessing', 'integration']
+const DATA_GIT_BRANCHES = ['integration', 'main', 'reprocessing']
 
 console.log('Starting SMT Server ' + SMT_VERSION + ' on branches ' + DATA_GIT_BRANCHES)
 
