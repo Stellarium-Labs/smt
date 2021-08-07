@@ -289,6 +289,9 @@ int paint_line(const painter_t *painter,
                double line[2][4], const uv_map_t *map,
                int split, int flags);
 
+int paint_linestring(const painter_t *painter, int frame,
+                     int size, const double (*points)[3]);
+
 /*
  * Function: paint_mesh
  * Render a 3d mesh

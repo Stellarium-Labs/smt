@@ -392,10 +392,12 @@ static int parse_properties(const json_value *data,
     parse_color(json_get_attr(data, "fill", 0), props->fill);
     props->stroke_width = json_get_attr_f(data, "stroke-width", 1);
     props->stroke_opacity = json_get_attr_f(data, "stroke-opacity", 1);
+    props->stroke_glow = json_get_attr_b(data, "stroke-glow", false);
     props->fill_opacity = json_get_attr_f(data, "fill-opacity", 0.5);
     if ((title = json_get_attr_s(data, "title")))
         props->title = strdup(title);
     props->text_anchor = parse_anchor(json_get_attr_s(data, "text-anchor"));
+    props->text_size = json_get_attr_i(data, "text-size", -1);
     props->text_rotate = -json_get_attr_f(data, "text-rotate", 0) * ERFA_DD2R;
     if ((v = json_get_attr(data, "text-offset", 0))) {
         if (parse_float_array(v, 0, 2, text_offset))

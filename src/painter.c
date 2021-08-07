@@ -344,6 +344,25 @@ split:
     return 0;
 }
 
+int paint_linestring(const painter_t *painter, int frame,
+                     int size, const double (*points)[3])
+{
+    double (*win_line)[3];
+    double (*pos_line)[3];
+    int i;
+    win_line = calloc(size, sizeof(*win_line));
+    pos_line = calloc(size, sizeof(*pos_line));
+    for (i = 0; i < size; i++) {
+        convert_frame(painter->obs, frame, FRAME_VIEW, true,
+                      points[i], pos_line[i]);
+        project_to_win(painter->proj, pos_line[i], win_line[i]);
+    }
+    render_line(painter->rend, painter, pos_line, win_line, size);
+    free(win_line);
+    free(pos_line);
+    return 0;
+}
+
 /*
  * Function: paint_mesh
  * Render a 3d mesh

@@ -38,19 +38,31 @@ typedef struct orbit_t {
  * Type: comet_t
  * Object that represents a single comet
  */
-typedef struct {
+typedef struct comet comet_t;
+struct comet {
     obj_t       obj;
     int         num;
     double      h;  // Absolute magnitude.
     double      g;  // Slope parameter.
     orbit_t     orbit;
     char        name[64]; // e.g 'C/1995 O1 (Hale-Bopp)'
-    bool        on_screen;  // Set once the object has been visible.
+
+    // Optional historical data.
+    struct {
+        double      time; // TT MJD.
+        double      duration; // days.
+        double      h;
+        double      g;
+        double      peak_vmag;  // If set, brightest observed historical mag.
+    } history;
 
     // Cached values.
     double      vmag;
     double      pvo[2][4];
-} comet_t;
+
+    // Linked list of currently visible.
+    comet_t     *visible_next, *visible_prev;
+};
 
 /*
  * Type: comet_t
@@ -60,17 +72,25 @@ typedef struct {
     obj_t   obj;
     char    *source_url;
     bool    parsed; // Set to true once the data has been parsed.
-    int     update_pos; // Index of the position for iterative update.
     regex_t search_reg;
     bool    visible;
     // Hints/labels magnitude offset
     double hints_mag_offset;
     bool   hints_visible;
+
+    comet_t *render_current;
+    comet_t *visibles; // Linked list of currently visible comets.
 } comets_t;
 
 // Static instance.
 static comets_t *g_comets = NULL;
 
+static double date2mjd(int year, int month, int day)
+{
+    double djm0, djm;
+    eraCal2jd(year, month, day, &djm0, &djm);
+    return djm0 - DJM0 + djm;
+}
 
 static const char *orbit_type_to_otype(char o)
 {
@@ -121,6 +141,18 @@ static void load_data(comets_t *comets, const char *data, int size)
         snprintf(comet->name, sizeof(comet->name), "%s", desgn);
         comet->pvo[0][0] = NAN;
         last_epoch = max(epoch, last_epoch);
+
+        // Check for historical comets, where we change the h and g values
+        // around a peak date.  Only support Neowise for the moment.
+        if (strcmp(desgn, "C/2020 F3 (NEOWISE)") == 0) {
+            comet->history = (typeof(comet->history)) {
+                .time = date2mjd(2020, 7, 3),
+                .duration = 30,
+                .peak_vmag = 1,
+                .h = 7.5,
+                .g = 5.2,
+            };
+        }
     }
 
     if (nb_err) {
@@ -131,9 +163,23 @@ static void load_data(comets_t *comets, const char *data, int size)
           format_time(buf, last_epoch, 0, "YYYY-MM-DD"));
 }
 
+static void comet_get_h_g(const comet_t *comet, double tt, double *h, double *g)
+{
+    double dt, k;
+    if (!comet->history.time) {
+        *h = comet->h;
+        *g = comet->g;
+        return;
+    }
+    dt = fabs(tt - comet->history.time);
+    k = smoothstep(comet->history.duration * 1.5, comet->history.duration, dt);
+    *h = mix(comet->h, comet->history.h, k);
+    *g = mix(comet->g, comet->history.g, k);
+}
+
 static int comet_update(comet_t *comet, const observer_t *obs)
 {
-    double a, p, n, ph[2][3], pv[2][3], or, sr, b, v, w, r, o, u, i;
+    double a, p, n, ph[2][3], pv[2][3], or, sr, b, v, w, r, o, u, i, h, g;
     const double K = 0.01720209895; // AU, day
 
     // Position algo for elliptical comets.
@@ -183,8 +229,8 @@ static int comet_update(comet_t *comet, const observer_t *obs)
     // XXX: probably better to switch to the same model as for asteroids.
     sr = vec3_norm(ph[0]);
     or = vec3_norm(comet->pvo[0]);
-    comet->vmag = comet->h + 5 * log10(or) +
-                      2.5 * comet->g * log10(sr);
+    comet_get_h_g(comet, obs->tt, &h, &g);
+    comet->vmag = h + 5 * log10(or) + 2.5 * g * log10(sr);
     return 0;
 }
 
@@ -199,6 +245,9 @@ static int comet_get_info(const obj_t *obj, const observer_t *obs, int info,
         return 0;
     case INFO_VMAG:
         *(double*)out = comet->vmag;
+        return 0;
+    case INFO_SEARCH_VMAG:
+        *(double*)out = min(comet->vmag, comet->history.peak_vmag ?: DBL_MAX);
         return 0;
     }
     return 1;
@@ -242,13 +291,14 @@ static void mat_rotate_y_toward(double mat[4][4], double dir[3])
 static void render_tail(comet_t *comet, const painter_t *painter, int tail)
 {
     double model_mat[4][4] = MAT4_IDENTITY;
-    double ph[3], rh, l, d, angle, point, dir[3], curvature = 0;
+    double ph[3], rh, l, d, angle, point, dir[3], curvature = 0, h, g;
     double color[4], lum_apparent, ld;
     json_value *args, *uniforms;
 
     vec3_sub(comet->pvo[0], painter->obs->sun_pvo[0], ph);
     rh = vec3_norm(ph);
-    compute_tail_size(comet->h, comet->g, rh, &l, &d);
+    comet_get_h_g(comet, painter->obs->tt, &h, &g);
+    compute_tail_size(h, g, rh, &l, &d);
     mat4_itranslate(model_mat, VEC3_SPLIT(comet->pvo[0]));
 
     switch (tail) {
@@ -285,13 +335,13 @@ static void render_tail(comet_t *comet, const painter_t *painter, int tail)
 
     // Translate to put the orgin in the middle of the coma.
     mat4_itranslate(model_mat, 0, -0.0001, 0);
+    mat4_iscale(model_mat, d / 2, l, d / 2);
 
     args = json_object_new(0);
     json_object_push(args, "shader", json_string_new("comet"));
     json_object_push(args, "blend_mode", json_string_new("ADD"));
     uniforms = json_object_push(args, "uniforms", json_object_new(0));
     json_object_push(uniforms, "u_length", json_double_new(l));
-    json_object_push(uniforms, "u_coma_radius", json_double_new(d / 2));
     json_object_push(uniforms, "u_curvature", json_double_new(curvature));
     json_object_push(uniforms, "u_color", json_vector_new(4, color));
 
@@ -300,6 +350,7 @@ static void render_tail(comet_t *comet, const painter_t *painter, int tail)
 }
 
 
+// Note: return 1 if the comet is actually visible on screen.
 static int comet_render(const obj_t *obj, const painter_t *painter)
 {
     double win_pos[2], vmag, size, luminance;
@@ -324,7 +375,6 @@ static int comet_render(const obj_t *obj, const painter_t *painter)
         return 0;
 
     painter_project(painter, FRAME_ICRF, comet->pvo[0], false, false, win_pos);
-    comet->on_screen = true;
     core_get_point_for_mag(vmag, &size, &luminance);
 
     point = (point_t) {
@@ -351,7 +401,7 @@ static int comet_render(const obj_t *obj, const painter_t *painter)
         render_tail(comet, painter, TAIL_GAS);
         render_tail(comet, painter, TAIL_DUST);
     }
-    return 0;
+    return 1;
 }
 
 static int comets_init(obj_t *obj, json_value *args)
@@ -374,12 +424,6 @@ static int comets_add_data_source(
     if (strcmp(key, "mpc_comets") != 0) return -1;
     comets->source_url = strdup(url);
     return 0;
-}
-
-static bool range_contains(int range_start, int range_size, int nb, int i)
-{
-    if (i < range_start) i += nb;
-    return i >= range_start && i < range_start + range_size;
 }
 
 static int comets_update(obj_t *obj, double dt)
@@ -408,29 +452,45 @@ static int comets_update(obj_t *obj, double dt)
     return 0;
 }
 
+static void add_to_visible(comets_t *comets, comet_t *comet)
+{
+    if (comet->visible_prev) return;
+    DL_APPEND2(comets->visibles, comet, visible_prev, visible_next);
+}
+
 static int comets_render(const obj_t *obj, const painter_t *painter)
 {
     comets_t *comets = (void*)obj;
-    comet_t *child;
-    obj_t *tmp;
+    int i, r;
     const int update_nb = 32;
-    int nb, i;
+    comet_t *child, *tmp;
 
     if (!comets->visible) return 0;
-    /* To prevent spending too much time computing position of comets that
-     * are not visible, we only render a small number of them at each
-     * frame, using a moving range.  The comets who have been flagged as
-     * on screen get rendered no matter what.  */
-    DL_COUNT(obj->children, tmp, nb);
-    i = 0;
-    MODULE_ITER(obj, child, "mpc_comet") {
-        if (child->on_screen ||
-                range_contains(comets->update_pos, update_nb, nb, i)) {
-            obj_render(&child->obj, painter);
-        }
-        i++;
+
+    // If the current selection is a comet, make sure it is flagged
+    // as visible.
+    if (core->selection && core->selection->parent == obj) {
+        add_to_visible(comets, (void*)core->selection);
     }
-    comets->update_pos = nb ? (comets->update_pos + update_nb) % nb : 0;
+
+    // Render all the flagged visible minor planets, remove those that are
+    // no longer visible.
+    DL_FOREACH_SAFE2(comets->visibles, child, tmp, visible_next) {
+        r = comet_render(&child->obj, painter);
+        if (r == 0 && &child->obj != core->selection) {
+            DL_DELETE2(comets->visibles, child, visible_prev, visible_next);
+            child->visible_prev = NULL;
+        }
+    }
+
+    // Then iter part of the full list as well.
+    child = comets->render_current ?: (void*)comets->obj.children;
+    for (i = 0; child && i < update_nb; i++, child = (void*)child->obj.next) {
+        if (child->visible_prev) continue; // Was already rendered.
+        r = comet_render(&child->obj, painter);
+        if (r == 1) add_to_visible(comets, child);
+    }
+    comets->render_current = child;
 
     return 0;
 }
