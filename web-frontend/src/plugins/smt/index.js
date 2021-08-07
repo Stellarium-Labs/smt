@@ -63,6 +63,8 @@ export default {
     app.$store.commit('setValue', { varName: 'showAzimuthalGridButton', newValue: false })
     app.$store.commit('setValue', { varName: 'showLandscapeButton', newValue: false })
     app.$store.commit('setValue', { varName: 'showAtmosphereButton', newValue: false })
+    app.$store.commit('setValue', { varName: 'showEquatorialGridButton', newValue: false })
+    app.$store.commit('setValue', { varName: 'showEquatorialJ2000GridButton', newValue: true })
     app.$store.commit('setValue', { varName: 'showConstellationsArtButton', newValue: false })
     app.$store.commit('setValue', { varName: 'showPlanetsVisibilityMenuItem', newValue: false })
     app.$store.commit('setValue', { varName: 'showViewSettingsMenuItem', newValue: false })
