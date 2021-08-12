@@ -47,10 +47,8 @@ services:
     build:
       context: ./apache-frontend
       dockerfile: Dockerfile
-    expose:
-      - 8101
     ports:
-      - 8101:80
+      - 80
     restart: always
     logging:
       driver: journald
@@ -66,5 +64,5 @@ services:
       - traefik.http.routers.smt-server-apache-front-websecure.rule=Host(`smtcas.stellarium-web.org`)
       - traefik.http.routers.smt-server-apache-front-websecure.entrypoints=websecure
       - traefik.http.routers.smt-server-apache-front-websecure.tls.certresolver=myresolver
-      - traefik.http.services.smt-server-apache-front-websecure.loadbalancer.server.port=8101
+      - traefik.http.services.smt-server-apache-front-websecure.loadbalancer.server.port=80
     network_mode: bridge
