@@ -47,8 +47,10 @@ services:
     build:
       context: ./apache-frontend
       dockerfile: Dockerfile
+    expose:
+      - 8101
     ports:
-      - 80:8101
+      - 8101:80
     restart: always
     logging:
       driver: journald
