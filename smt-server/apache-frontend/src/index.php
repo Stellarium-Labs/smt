@@ -10,7 +10,7 @@ $phpCAS = new phpCAS;
 // Enable debugging
 //phpCAS::setLogger();
 // Enable verbose error messages. Disable in production!
-phpCAS::setVerbose(true);
+//phpCAS::setVerbose(true);
 
 // Initialize phpCAS
 phpCAS::client(SAML_VERSION_1_1, 'cas.cosmos.esa.int', 443, '/cas');
@@ -20,7 +20,7 @@ phpCAS::client(SAML_VERSION_1_1, 'cas.cosmos.esa.int', 443, '/cas');
 phpCAS::setNoCasServerValidation();
 
 // Force CAS authentication on any page that includes this file
-phpCAS::forceAuthentication();
+//phpCAS::forceAuthentication();
 
 ?>
 <body>
@@ -28,16 +28,6 @@ phpCAS::forceAuthentication();
 <h2>Advanced SAML 1.1 example</h2>
 Authentication succeeded for user
 <strong><?php echo phpCAS::getUser(); ?></strong>.
-
-<p>
-Version PHP:
-<?php
-// affiche le numéro de version courante du PHP.
-echo 'Version PHP courante : ' . phpversion();
-// affiche e.g. '2.0' ou rien du tout si cette extension n'est pas active
-echo phpversion('tidy');
-?>
-</p>
 
 <h3>User Attributes</h3>
 <ul>
