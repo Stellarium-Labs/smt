@@ -23,10 +23,6 @@ phpCAS::setNoCasServerValidation();
 phpCAS::forceAuthentication();
 
 ?>
-<html>
-<head>
-<title>Advanced SAML 1.1 example</title>
-</head>
 <body>
 
 <h2>Advanced SAML 1.1 example</h2>
