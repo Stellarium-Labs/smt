@@ -48,7 +48,7 @@ services:
       context: ./apache-frontend
       dockerfile: Dockerfile
     ports:
-      - 8101:80
+      - 80:8101
     restart: always
     logging:
       driver: journald
