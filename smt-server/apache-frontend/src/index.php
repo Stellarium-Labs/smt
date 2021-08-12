@@ -4,10 +4,11 @@
 // to CAS using SAML1.1
 
 // Load the CAS lib
-require_once 'phpCAS/CAS.php';
+require_once(APPPATH.'/../vendor/autoload.php');
+$phpCAS = new phpCAS;
 
 // Enable debugging
-phpCAS::setLogger();
+//phpCAS::setLogger();
 // Enable verbose error messages. Disable in production!
 phpCAS::setVerbose(true);
 
@@ -22,10 +23,25 @@ phpCAS::setNoCasServerValidation();
 phpCAS::forceAuthentication();
 
 ?>
+<html>
+<head>
+<title>Advanced SAML 1.1 example</title>
+</head>
+<body>
 
 <h2>Advanced SAML 1.1 example</h2>
 Authentication succeeded for user
 <strong><?php echo phpCAS::getUser(); ?></strong>.
+
+<p>
+Version PHP:
+<?php
+// affiche le numéro de version courante du PHP.
+echo 'Version PHP courante : ' . phpversion();
+// affiche e.g. '2.0' ou rien du tout si cette extension n'est pas active
+echo phpversion('tidy');
+?>
+</p>
 
 <h3>User Attributes</h3>
 <ul>

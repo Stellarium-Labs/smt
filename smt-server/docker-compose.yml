@@ -47,6 +47,10 @@ services:
     build:
       context: ./apache-frontend
       dockerfile: Dockerfile
+    expose:
+      - 8101
+    ports:
+      - 80:8101
     ports:
       - 80
     restart: always
