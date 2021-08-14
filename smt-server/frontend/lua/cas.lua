@@ -40,7 +40,7 @@ local function _set_cookie(cookie_str)
 end
 
 local function _uri_without_ticket()
-   return ngx.var.scheme .. "://" .. ngx.var.host ..  ngx.re.sub(ngx.var.request_uri, "[?&]ticket=.*", "")
+   return "https://" .. ngx.var.host ..  ngx.re.sub(ngx.var.request_uri, "[?&]ticket=.*", "")
 end
 
 local function _cas_login()
