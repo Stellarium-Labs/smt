@@ -105,6 +105,7 @@ local function _validate(ticket)
    local res, err = httpc:request_uri(cas_uri .. "/serviceValidate", { query = { ticket = ticket, service = _uri_without_ticket() } })
   
    if res and res.status == ngx.HTTP_OK and res.body ~= nil then
+      ngx.log(ngx.ERR, res.body)
       if string.find(res.body, "<cas:authenticationSuccess>") then
          local m = ngx.re.match(res.body, "<cas:user>(.*?)</cas:user>");
          if m then
