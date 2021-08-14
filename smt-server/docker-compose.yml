@@ -26,6 +26,8 @@ services:
     ports:
       - 8100:8100
     restart: always
+    volumes:
+      - ./frontend:/usr/share/nginx/html/code
     logging:
       driver: journald
     depends_on:
@@ -42,31 +44,11 @@ services:
       - traefik.http.routers.smt-server-nginx-front-websecure.tls.certresolver=myresolver
       - traefik.http.services.smt-server-nginx-front-websecure.loadbalancer.server.port=8100
     network_mode: bridge
+    links:
+      - php
 
-  smt-server-apache-front:
-    build:
-      context: ./apache-frontend
-      dockerfile: Dockerfile
-    expose:
-      - 8101
-    ports:
-      - 80:8101
-    ports:
-      - 80
-    restart: always
-    logging:
-      driver: journald
-    depends_on:
-     - smt-server
-    container_name: smt-server-apache-front
-    labels:
-      - traefik.enable=true
-      - traefik.http.middlewares.smt-server-apache-front-redirect-web-secure.redirectscheme.scheme=https
-      - traefik.http.routers.smt-server-apache-front-web.middlewares=smt-server-apache-front-redirect-web-secure
-      - traefik.http.routers.smt-server-apache-front-web.rule=Host(`smtcas.stellarium-web.org`)
-      - traefik.http.routers.smt-server-apache-front-web.entrypoints=web
-      - traefik.http.routers.smt-server-apache-front-websecure.rule=Host(`smtcas.stellarium-web.org`)
-      - traefik.http.routers.smt-server-apache-front-websecure.entrypoints=websecure
-      - traefik.http.routers.smt-server-apache-front-websecure.tls.certresolver=myresolver
-      - traefik.http.services.smt-server-apache-front-websecure.loadbalancer.server.port=80
+  php:
+    image: php:7-fpm
     network_mode: bridge
+    volumes:
+      - ./frontend:/usr/share/nginx/html/code
