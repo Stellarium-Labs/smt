@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.5.2] - 2022-06-27
+- Force users to be authenticated using ESA CAS Single-Sign-On
+
 ## [0.5.1] - 2021-06-08
 - Show ingestion logs in branch information
 - Geojson data ingestion is now more robust to issues in geojson
