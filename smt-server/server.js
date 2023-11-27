@@ -183,6 +183,7 @@ const reSyncDataForBranch = async function (branch) {
   if (!reloadGeojson) {
     console.log('Data was not changed, no need to reload DB')
     if (!branchData.qe) branchData.qe = new QueryEngine(branchData.dbFileName)
+    branchData.BASE_HASH_KEY = newServerInfo.baseHashKey
     branchData.status = 'ready'
     return
   }
