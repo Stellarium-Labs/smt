@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.3] - 2023-11-27
+- Fix bug when restarting the server when the data content (on git) was not
+  modified and the server cache was cleared.
+- Fix docker scripts to make them work again using more recent distribs.
+
 ## [0.5.2] - 2022-06-27
 - Force users to be authenticated using ESA CAS Single-Sign-On
 
