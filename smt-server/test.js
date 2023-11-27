@@ -20,7 +20,7 @@ process.on('SIGINT', () => {
 })
 
 const __dirname = process.cwd()
-const dbFileName = __dirname + '/qe.db'
+const dbFileName = __dirname + '/qe-main.db'
 
 // Initialize the read-only engine
 const qe = new QueryEngine(dbFileName)
