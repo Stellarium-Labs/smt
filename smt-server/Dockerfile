@@ -1,4 +1,4 @@
-FROM node:14.15.0-stretch
+FROM node:14.21.3-bullseye
 
 EXPOSE 8102
 
